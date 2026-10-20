@@ -48,6 +48,11 @@
 #define CMOS_FILE "defender.cmos"
 #define CMOS_SAVE_FRAMES 300  /* write changed CMOS (scores, settings) at most every 5 s */
 #define PRIME_FRAMES 1800     /* blank CMOS: let the game restore its factory settings */
+/* The controls page, shown over the attract mode when nobody has touched the
+   controls for CONTROLS_IDLE_FRAMES; it stays CONTROLS_SHOW_FRAMES and comes
+   back every CONTROLS_IDLE_FRAMES + CONTROLS_SHOW_FRAMES. Any input hides it. */
+#define CONTROLS_IDLE_FRAMES (30 * FRAME_HZ)
+#define CONTROLS_SHOW_FRAMES (10 * FRAME_HZ)
 
 #define WHITE 0xFFFFFFu
 #define GREY 0x606060u
@@ -73,6 +78,7 @@ typedef struct {
     int test_card;       /* --test-card, or no ROM: the card instead of the game */
     Board board;
     int cmos_wait;       /* frames until changed CMOS is written */
+    long idle;           /* frames of attract mode without input (the controls page) */
 } Game;
 
 static Game g;
@@ -144,6 +150,7 @@ static void draw_scene(Framebuffer *t)
     snprintf(line, sizeof line, "FRAME %lu   RENDER %dX", g.clock, t->scale);
     centred(t, 194, line, GREY);
     centred(t, 210, "EXIT: HOLD SELECT+START OR ESC", GREY);
+    centred(t, 220, "CONVERTED BY MONKEYX", GREY);
 }
 
 /* ---- the game --------------------------------------------------------------- */
@@ -184,6 +191,63 @@ static void board_inputs(const InputFrame *in)
     b->in2 = (uint8_t)((in->coin ? IN2_COIN1 : 0) | (in->menu_held ? IN2_ADVANCE : 0));
 }
 
+/* ---- the controls page ---------------------------------------------------- */
+
+/* The game's own state: $A0BF bit 5 is set from a game's start to its end
+   (high-score display included), and clear all through the attract mode,
+   with or without credits (found with ram_probe.lua, 1 and 2 players). */
+static int game_running(void) { return g.board.ram[0xA0BF] & 0x20; }
+
+static bool any_input(const InputFrame *in)
+{
+    return in->move_y || in->thrust || in->reverse || in->fire || in->smart_bomb || in->hyperspace || in->coin ||
+           in->start || in->start2 || in->menu_held;
+}
+
+static bool controls_page_up(void)
+{
+    if (g.test_card || g.idle < CONTROLS_IDLE_FRAMES) return false;
+    return (g.idle - CONTROLS_IDLE_FRAMES) % (CONTROLS_IDLE_FRAMES + CONTROLS_SHOW_FRAMES) < CONTROLS_SHOW_FRAMES;
+}
+
+static const struct { const char *what, *pad, *keys; } CONTROLS[] = {
+    { "UP / DOWN", "STICK, D-PAD", "UP DOWN" },
+    { "FIRE", "A", "SPACE, CTRL" },
+    { "THRUST", "B, R1", "X, ALT" },
+    { "REVERSE", "L1", "Z" },
+    { "SMART BOMB", "X", "C" },
+    { "HYPERSPACE", "Y", "V, SHIFT" },
+    { "", "", "" },
+    { "COIN", "SELECT", "5" },
+    { "1 PLAYER START", "START", "1, ENTER" },
+    { "2 PLAYER START", "L1+START", "2" },
+    { "OPERATOR MENU", "SELECT+R1", "F2" },
+    { "GRAPHICS", "SELECT+L1", "F3 (F4 GLOW, F5 CRT)" },
+    { "EXIT", "HOLD SELECT+START", "ESC" },
+};
+
+/* Over the game's frame (cosmetic: the next frame is the arcade's again). */
+static void draw_controls(Framebuffer *t)
+{
+    const int x0 = 14, y0 = 24, w = FB_WIDTH - 28, h = FB_HEIGHT - 48;
+    fill_rectf_alpha(t, x0, y0, w, h, 0x000000, 0.94);
+    fill_rectf(t, x0, y0, w, 1, ORANGE);
+    fill_rectf(t, x0, y0 + h - 1, w, 1, ORANGE);
+    centred(t, y0 + 8, "DEFENDER  -  CONTROLS", YELLOW);
+    int y = y0 + 24;
+    debug_text(t, x0 + 10, y, "", CYAN);
+    debug_text(t, x0 + 96, y, "PAD", CYAN);
+    debug_text(t, x0 + 170, y, "KEYBOARD", CYAN);
+    y += 12;
+    for (size_t i = 0; i < sizeof CONTROLS / sizeof CONTROLS[0]; i++, y += 9) {
+        debug_text(t, x0 + 10, y, CONTROLS[i].what, WHITE);
+        debug_text(t, x0 + 96, y, CONTROLS[i].pad, GREEN);
+        debug_text(t, x0 + 170, y, CONTROLS[i].keys, GREEN);
+    }
+    centred(t, y0 + h - 30, "PLAYERS TAKE TURNS ON ONE PANEL - EVERY PAD DRIVES IT", GREY);
+    centred(t, y0 + h - 14, "CONVERTED BY MONKEYX", CYAN);
+}
+
 /* Classic: the arcade frame. HD: drawn at the render scale. FILTER: the arcade
    frame upscaled whole. Glow goes over whichever is shown. The game's frame is
    only pixels, so its HD presets upscale it like FILTER. */
@@ -196,6 +260,7 @@ static void draw(int display_scale)
     const int s = gfx_render_scale(gs, display_scale);
     shown = &fb;
     if (!g.test_card) { /* the board drew the frame into fb */
+        if (controls_page_up()) draw_controls(&fb);
         if (g.gfx_notice > 0) {
             char text[80];
             snprintf(text, sizeof text, "GRAPHICS: %s", gfx_describe(&g.gfx));
@@ -226,6 +291,7 @@ static void step(const InputFrame *in)
     if (!g.test_card) {
         board_inputs(in);
         board_run_frame(&g.board, &fb);
+        g.idle = game_running() || any_input(in) ? 0 : g.idle + 1;
         audio_stream(g.board.sound.out, g.board.sound.out_len, BOARD_AUDIO_RATE);
         if (g.board.cmos_dirty && --g.cmos_wait <= 0) {
             save_cmos();

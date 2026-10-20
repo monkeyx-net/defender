@@ -11,7 +11,7 @@
         "porter": [
             "monkeyx-net"
         ],
-        "desc": "A native SDL2 rebuild of the 1981 Williams arcade game, checked against the arcade ROM running in MAME. Work in progress.",
+        "desc": "A native SDL2 rebuild of the 1981 Williams arcade game, checked against the arcade ROM running in MAME. Work in progress. Converted by monkeyx.",
         "desc_md": null,
         "inst": "Copy your MAME defender.zip ROM set into ports/defender/.",
         "inst_md": null,

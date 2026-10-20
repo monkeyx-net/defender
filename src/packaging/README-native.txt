@@ -1,6 +1,8 @@
 Defender (native SDL2 build)
 ============================
 
+Converted by monkeyx.
+
 Run ./defender, or defender.exe on Windows (add --windowed for a window on a
 desktop). The game is your ROM's own code on an emulated Williams board,
 with sound; the port adds the graphics presets, pad controls and saving.
@@ -9,6 +11,9 @@ work, done before the window opens). Your settings and high scores (the
 arcade's CMOS) are saved as defender.cmos in $DEFENDER_SAVE_DIR, else
 $XDG_DATA_HOME/defender, %APPDATA%\defender on Windows, or ~/.local/share/defender.
 ./defender --test-card shows the ROM status and an input tester.
+In the attract mode, when nobody touches the controls for 30 seconds, a
+page lists the controls (and comes back every 40 seconds); any button
+hides it.
 
 ROM set
   The game needs your own MAME defender ROM set (red label). Put

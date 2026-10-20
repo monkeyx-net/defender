@@ -55,7 +55,9 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
 ## Layout (`src/`)
 
 - `main.c` - SDL setup, fixed 60 Hz loop running one board frame per tick,
-  the graphics pipeline, CMOS saving, the test card (`--test-card`),
+  the graphics pipeline, CMOS saving, the controls page over the attract
+  mode (after 30 s idle; `$A0BF` bit 5 tells a game from the attract mode),
+  the test card (`--test-card`),
   `--input`, `--frames`, `--screenshot`, `--rom`, `--check-rom`, `--dump-rom`
 - `emu/` - the emulated hardware: `m6809.c` (main CPU), `pia6821.c`,
   `board.c` (Defender's main board: memory map with ROM banks and the I/O

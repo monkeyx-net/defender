@@ -82,6 +82,10 @@ Timing, found by comparing instruction traces (`mame_emu`):
 - With a blank CMOS the game restores its factory settings and stops in the
   bookkeeping pages; the port (and the MAME tests) run that once and boot
   again with the CMOS it wrote.
+- $A0BF is a status byte: $21 at power-on, $00 in the attract mode, $10
+  once there are credits or a game has ended, and bit 5 ($20) set from a
+  game's start to its end (high-score display included), 1 or 2 players
+  (`ram_probe.lua`). The port shows its controls page while bit 5 is clear.
 - The main CPU's idle loop is $E7C3-$E7C7 (waiting on <$5D, direct page
   $A0); the interrupts do the work. The controls are read around line 130
   ($D5D7, $D5DC).

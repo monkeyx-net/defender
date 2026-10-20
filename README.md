@@ -12,6 +12,8 @@ desktops and the web. See [DEFENDER_PORT_PLAN.md](DEFENDER_PORT_PLAN.md).
 
 You need your own MAME `defender` ROM set (`defender.zip`, red label); none is included.
 
+Converted by monkeyx.
+
 ```bash
 cmake -S . -B build && cmake --build build -j
 build/defender --windowed --rom /path/to/defender.zip

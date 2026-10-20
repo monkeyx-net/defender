@@ -3,7 +3,7 @@
   <game>
     <path>./Defender.sh</path>
     <name>Defender</name>
-    <desc>A native SDL2 rebuild of the 1981 Williams arcade game (work in progress). Needs your MAME defender.zip ROM set in ports/defender/.</desc>
+    <desc>A native SDL2 rebuild of the 1981 Williams arcade game (work in progress). Needs your MAME defender.zip ROM set in ports/defender/. Converted by monkeyx.</desc>
     <releasedate>19810101T000000</releasedate>
     <developer>Eugene Jarvis, Larry DeMar</developer>
     <publisher>Williams Electronics</publisher>
