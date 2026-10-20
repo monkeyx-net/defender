@@ -1,0 +1,23 @@
+Defender native SDL2 port
+Copyright 2026 monkeyx-net
+
+The source code of this project is licensed under the Apache License,
+Version 2.0 (see LICENSE).
+
+Parts of the source (platform layer, asset loaders, framebuffer, blitter,
+pixel-art scalers and enhanced graphics) come from the Robotron: 2084
+native SDL2 port, Copyright 2025-2026 Steven Hatch, under the same license,
+by way of the Joust native SDL2 port (Copyright 2026 monkeyx-net).
+
+THIRD-PARTY MATERIAL NOT COVERED BY THAT LICENSE
+
+Defender (1981) was created by Eugene Jarvis and Larry DeMar and published
+by Williams Electronics. The game, its artwork, sounds and data, and the
+DEFENDER trademark belong to their current rights holders.
+
+This project contains and distributes no ROM images and no data, graphics
+or sounds taken from them. The program reads the player's own ROM set at
+run time.
+
+This project is not affiliated with or endorsed by Williams Electronics,
+Midway, Warner Bros. or any successor.

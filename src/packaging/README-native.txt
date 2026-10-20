@@ -1,0 +1,37 @@
+Defender (native SDL2 build)
+============================
+
+Run ./defender, or defender.exe on Windows (add --windowed for a window on a
+desktop). The game is your ROM's own code on an emulated Williams board,
+with sound; the port adds the graphics presets, pad controls and saving.
+On the first start the arcade restores its factory settings (a moment's
+work, done before the window opens). Your settings and high scores (the
+arcade's CMOS) are saved as defender.cmos in $DEFENDER_SAVE_DIR, else
+$XDG_DATA_HOME/defender, %APPDATA%\defender on Windows, or ~/.local/share/defender.
+./defender --test-card shows the ROM status and an input tester.
+
+ROM set
+  The game needs your own MAME defender ROM set (red label). Put
+  defender.zip (or a defender/ folder) next to the program, set DEFENDER_ROM
+  to its path, or start with --rom /path/to/defender.zip. FBNeo sets and old file names work too: ROMs
+  are matched by checksum. Check a set with: ./defender --check-rom defender.zip
+
+Controls (one control panel: the players take turns, as on the cabinet)
+  Up/down: left stick / D-pad; keyboard Up Down
+  Fire: A; keyboard Space or Ctrl
+  Thrust: B or R1; keyboard X or Alt
+  Reverse: L1; keyboard Z
+  Smart bomb: X; keyboard C
+  Hyperspace: Y; keyboard V or Shift
+  Coin: Select / 5
+  Start: Start / 1 or Enter;  2-player start: L1+Start / 2
+  Operator menu: Select+R1 / F2 (the cabinet's Advance button)
+  Graphics: Select+L1 / F3 steps the presets, F4 glow, F5 CRT scanlines
+  Exit: hold Select+Start for 1 second / Esc
+  Every connected pad drives the panel.
+
+Graphics presets (--gfx <preset>)
+  classic, classic-crt, crisp, smooth, hd-crisp, hd-smooth, hd-glow, hd-glow-crt
+  (in the game the hd- presets upscale the whole picture, like crisp/smooth)
+
+See NOTICE for the third-party material this project refers to.
