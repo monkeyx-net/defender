@@ -48,6 +48,7 @@
 #define CMOS_FILE "defender.cmos"
 #define CMOS_SAVE_FRAMES 300  /* write changed CMOS (scores, settings) at most every 5 s */
 #define PRIME_FRAMES 1800     /* blank CMOS: let the game restore its factory settings */
+#define BOOT_SKIP_FRAMES 720  /* web: run the power-on tests headless, so the page opens on the attract mode */
 /* The controls page, shown over the attract mode when nobody has touched the
    controls for CONTROLS_IDLE_FRAMES; it stays CONTROLS_SHOW_FRAMES and comes
    back every CONTROLS_IDLE_FRAMES + CONTROLS_SHOW_FRAMES. Any input hides it. */
@@ -162,13 +163,16 @@ static void board_start(void)
     static uint8_t cmos[BOARD_CMOS_SIZE];
     if (!save_load(CMOS_FILE, cmos, sizeof cmos)) {
         board_init(&g.board, &g.rom, cmos);
-        return;
+    } else {
+        board_init(&g.board, &g.rom, NULL);
+        for (int i = 0; i < PRIME_FRAMES; i++) board_run_frame(&g.board, NULL);
+        memcpy(cmos, g.board.cmos, sizeof cmos);
+        board_init(&g.board, &g.rom, cmos);
+        g.board.cmos_dirty = 1;
     }
-    board_init(&g.board, &g.rom, NULL);
-    for (int i = 0; i < PRIME_FRAMES; i++) board_run_frame(&g.board, NULL);
-    memcpy(cmos, g.board.cmos, sizeof cmos);
-    board_init(&g.board, &g.rom, cmos);
-    g.board.cmos_dirty = 1;
+#ifdef __EMSCRIPTEN__
+    for (int i = 0; i < BOOT_SKIP_FRAMES; i++) board_run_frame(&g.board, NULL);
+#endif
 }
 
 static void save_cmos(void)
