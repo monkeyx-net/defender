@@ -9,6 +9,7 @@
  *            [--input script.txt] [--frames N] [--screenshot out.png]
  *   defender --check-rom <dir|zip>
  *   defender --dump-rom <dir|zip> <first> <last>
+ *   defender --extract <dir|zip> [<asset dir>]
  *
  * --frames N stops after N updates; with --screenshot the last frame is
  * written as a PNG (use SDL_VIDEODRIVER=dummy to run headless).
@@ -19,12 +20,18 @@
  * in the fixed ROM, and "B:ADDR BYTE" for each ROM bank B (1-7) where the
  * range covers $C000-$CFFF (banks first): the format the MAME probe writes
  * (src/tests/mame/rom_map_probe.lua).
+ * --extract writes the pictures, font, logos, palette and sounds from the ROM
+ * set to the asset folder (default $DEFENDER_ASSETS, else assets/ next to the
+ * program; assets/extract.h). The game written in C will read only that
+ * folder; the emulated board still runs from the ROM set.
  */
 #include <SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "assets/assets.h"
+#include "assets/extract.h"
 #include "assets/png.h"
 #include "assets/rom.h"
 #include "assets/savefile.h"
@@ -75,6 +82,7 @@ typedef struct {
     int coins;
     char rom_path[1024];
     char rom_error[256];
+    char assets_path[1024]; /* the extracted assets, or "" */
     RomSet rom;
     int test_card;       /* --test-card, or no ROM: the card instead of the game */
     Board board;
@@ -116,6 +124,12 @@ static void draw_scene(Framebuffer *t)
     } else {
         centred(t, 26, g.rom_error[0] ? g.rom_error : "NO ROM SET FOUND", RED);
         centred(t, 34, "PUT DEFENDER.ZIP NEXT TO THE PROGRAM, OR USE --ROM", RED);
+    }
+    if (g.assets_path[0]) {
+        snprintf(line, sizeof line, "ASSETS: %.56s", g.assets_path);
+        centred(t, 42, line, GREEN);
+    } else {
+        centred(t, 42, "NO ASSETS: RUN DEFENDER --EXTRACT DEFENDER.ZIP", YELLOW);
     }
 
     const InputFrame *in = &g.in;
@@ -346,6 +360,30 @@ static int dump_rom(const char *path, const char *first, const char *last)
     return 0;
 }
 
+static int extract(const char *argv0, const char *rom_path, const char *out_dir)
+{
+    static RomSet rom;
+    char err[512], dir[1024];
+    if (out_dir) snprintf(dir, sizeof dir, "%s", out_dir);
+    else if (getenv("DEFENDER_ASSETS")) snprintf(dir, sizeof dir, "%s", getenv("DEFENDER_ASSETS"));
+    else {
+        snprintf(dir, sizeof dir, "%s", argv0);
+        char *slash = strrchr(dir, '/');
+#ifdef _WIN32
+        char *bslash = strrchr(dir, '\\');
+        if (bslash > slash) slash = bslash;
+#endif
+        if (slash) snprintf(slash, sizeof dir - (size_t)(slash - dir), "/assets");
+        else snprintf(dir, sizeof dir, "assets");
+    }
+    if (rom_load(&rom, rom_path, err, sizeof err) || extract_all(&rom, dir, err, sizeof err)) {
+        fprintf(stderr, "defender: %s\n", err);
+        return 1;
+    }
+    printf("defender: assets extracted to %s\n", dir);
+    return 0;
+}
+
 static int save_screenshot(const char *path)
 {
     static uint8_t rgba[FB_HEIGHT * FB_MAX_SCALE * FB_WIDTH * FB_MAX_SCALE * 4];
@@ -472,6 +510,7 @@ int main(int argc, char **argv)
     const char *rom_arg = NULL;
     if (argc == 3 && !strcmp(argv[1], "--check-rom")) return check_rom(argv[2]);
     if (argc == 5 && !strcmp(argv[1], "--dump-rom")) return dump_rom(argv[2], argv[3], argv[4]);
+    if ((argc == 3 || argc == 4) && !strcmp(argv[1], "--extract")) return extract(argv[0], argv[2], argc == 4 ? argv[3] : NULL);
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--windowed")) windowed = true;
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) max_frames = strtol(argv[++i], NULL, 10);
@@ -491,8 +530,9 @@ int main(int argc, char **argv)
                     "usage: %s [--windowed] [--gfx preset] [--rom path] [--test-card]\n"
                     "          [--input script.txt] [--frames N] [--screenshot out.png]\n"
                     "       %s --check-rom <dir|zip>\n"
-                    "       %s --dump-rom <dir|zip> <first> <last>\n",
-                    argv[0], argv[0], argv[0]);
+                    "       %s --dump-rom <dir|zip> <first> <last>\n"
+                    "       %s --extract <dir|zip> [<asset dir>]\n",
+                    argv[0], argv[0], argv[0], argv[0]);
             return 2;
         }
     }
@@ -505,6 +545,7 @@ int main(int argc, char **argv)
     else rom_locate(argv[0], g.rom_path, sizeof g.rom_path);
     if (g.rom_path[0] && rom_load(&g.rom, g.rom_path, g.rom_error, sizeof g.rom_error))
         fprintf(stderr, "defender: %s\n", g.rom_error);
+    if (assets_find(argv[0], EXTRACT_MANIFEST, g.assets_path, sizeof g.assets_path)) g.assets_path[0] = '\0';
     if (!g.rom.loaded) g.test_card = 1; /* nothing to run: show why */
     if (!g.test_card) board_start();
 

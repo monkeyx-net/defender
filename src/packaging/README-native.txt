@@ -20,6 +20,10 @@ ROM set
   defender.zip (or a defender/ folder) next to the program, set DEFENDER_ROM
   to its path, or start with --rom /path/to/defender.zip. FBNeo sets and old file names work too: ROMs
   are matched by checksum. Check a set with: ./defender --check-rom defender.zip
+  ./defender --extract defender.zip writes the game's pictures, font, logos
+  and sounds from your set into assets/ next to the program (the PortMaster
+  launcher does this on the first run). The emulated game still reads the
+  ROM set; the game being rewritten in C will need only assets/.
 
 Controls (one control panel: the players take turns, as on the cabinet)
   Up/down: left stick / D-pad; keyboard Up Down

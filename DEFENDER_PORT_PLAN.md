@@ -2,16 +2,29 @@
 
 A C11 / SDL2 port of Defender (Williams, 1981) that plays like the arcade
 game, for PortMaster handhelds (aarch64), desktops (x86_64 Linux, Windows)
-and the web. The game is the player's own ROM running on an emulated board;
-MAME, running the same ROM, is the reference.
+and the web. Today the game is the player's own ROM running on an emulated
+board, with MAME, running the same ROM, as the reference. The goal
+(decision 6, 2026-10-20) is the game rewritten in C, like the Robotron port
+(`../robotron`), reading only assets extracted once from the ROM set, with
+the emulated board as its reference.
 
 The repository started as a copy of the sibling Joust port (`../joust`,
 2026-10-20), which runs the same first-generation Williams hardware.
 
 ## 1. Decisions (2026-10-20)
 
-1. **No ROM-derived data in the repo, the packages or the binary.** The
-   program reads the player's ROM set at run time. CI and releases carry none.
+1. **The ROM set is read once** (changed 2026-10-20, as Robotron's decision
+   1). The binary never embeds ROM-derived data; it loads it at run time
+   from an `assets/` folder. On first run, if `assets/` is missing,
+   `defender --extract <defender.zip>` (also run by the launcher when it
+   finds the zip in the port folder) writes the graphics, fonts, tables and
+   sound data there from the player's own ROM set; after that the ROM set is
+   no longer needed. The repo, CI and releases still carry no ROM-derived
+   data. This only pays off with the game written in C (decision 6): while
+   the emulated board runs the ROM's code, it still reads the ROM set.
+   Graphics and sounds are extracted (`src/assets/extract.c`, test
+   `extract`); tables follow as the C game needs them. Development builds
+   extract to `build/assets/` after each build.
 2. **MAME is the reference.** Behaviour is established by probing the ROM in
    MAME 0.289 and checked by CTest against the port. Probes are Lua and only
    dump; C or CMake compares.
@@ -30,8 +43,14 @@ The repository started as a copy of the sibling Joust port (`../joust`,
 5. **Enhanced graphics** as in the Joust port (FILTER and HD presets, glow,
    scanlines), cosmetic only, classic by default. The game's frame is only
    pixels, so the HD presets upscale it like FILTER.
-6. **Run the ROM's code** on an emulated board (`src/emu/`), written in C for
-   this port (no MAME code); `mame_emu` checks it against MAME.
+6. **The game in C** (changed 2026-10-20). The game logic is rewritten in C
+   (`src/sim/`, `src/game/`), as Robotron's was, from the ROM's behaviour
+   (traces, probes, the disassembly MAME writes to `build/re`). The
+   emulated board (`src/emu/`, checked against MAME by `mame_emu`) stays:
+   it is the reference the C game is compared with, frame by frame and in
+   process, and it runs the game until the C version reaches parity. It
+   also records the sounds at extraction (section 2.1). The 6808 is not
+   needed at play time once the C game plays the WAVs.
 
 ## 2. Hardware (Williams first generation, before the blitter)
 
@@ -59,7 +78,41 @@ Confirmed in this repo (each by a `mame` test):
   at $8400). Its interrupt handler ($FCB6) resets the stack and starts each
   sound afresh.
 
-Timing, found by comparing instruction traces (`mame_emu`):
+### 2.1 Graphics and sound in the ROM (found 2026-10-20, `extract`)
+
+- Object pictures: descriptors at $F8CE-$F9F0 in the fixed ROM, mostly 10
+  bytes: width in bytes, height, even-x data, odd-x data, draw routine,
+  erase routine (object block +2 points at its descriptor; the object list
+  at $A065 draws through `JSR [6,Y]` and erases through `JSR [8,Y]`, $E3AC).
+  $F96F, $F9D5 and $F9D9 are 4 bytes (width, height, data). Data is column
+  by column as the screen (byte (x/2)*h + y), at $C000-$CFFF in bank 2,
+  which the drawing routines select. The draw routines ($D0F9-$D360) copy
+  8 bytes at a time with `PULS`/`PSHU`; $F522 copies any descriptor and
+  $F57B erases it.
+- Named so far: landers $F985/$F98F/$F999, baiters $F9A3/$F9AD/$F9B7, the
+  ship $F9C1/$F9CB, the 250 and 500 scores $F9DD/$F9E7, the ships-left
+  and smart-bomb icons $F9D5/$F9D9; the others (mutant, pod, swarmer,
+  humanoid, bomber frames, shots) still need confirming in play.
+- Font: 45 descriptors of 4 bytes (width, height 8, data) at bank 2 $C5E3;
+  the character routine (bank 2 $CB29) maps space ! , - . / 0-9 : ? @ A-Z
+  to them and anything else to entry 3. Entries 3 and 5 ('-', '/') hold the
+  '?' shape, '@' is blank. Scores use the same digits (bank 2 $C000 points
+  at '0').
+- The Williams logo is drawn as pen strokes from data in bank 1 ($C6BA);
+  the DEFENDER logo is built in RAM. The extractor takes both from the
+  emulated attract mode at frame 1500 (after the CMOS priming reboot).
+  Still to find: the small font of the copyright line, the terrain, the
+  scanner and the stars.
+- Explosions scatter a picture's pixels ($FDEF).
+- Sound commands are 5 bits ($C0 | n; $1F, sent as $3F, is no command):
+  $03, $04 and $0C make no sound on their own; $07, $09, $0F, $10, $11 and
+  $1B play until the next command (their WAVs hold 4 s); the others end by
+  themselves, the longest in about 17 s. The sound CPU's idle loop is at
+  $FD12.
+
+### 2.2 Timing
+
+Found by comparing instruction traces (`mame_emu`):
 - A frame is 260 lines of 64 CPU cycles, starting at line 247; MAME's frame
   callbacks fire 16640 cycles apart but run a few instructions off the
   boundary, so RAM dumped there is a little fuzzy (the stacks, the sound
@@ -93,7 +146,14 @@ Timing, found by comparing instruction traces (`mame_emu`):
 ## 3. Test plan
 
 - **Unit** (`ctest`, no ROM): scalers, presets, glow (`enhance`).
-- **ROM** (label `rom`): the loader (`rom_load`).
+- **ROM** (label `rom`): the loader (`rom_load`); the extractor
+  (`extract`: two extractions are byte-identical, every file is there, the
+  font matches the attract mode's "PRESENTS" pixel for pixel on the
+  emulated board, no manifest without a ROM set).
+- **To add with the C game** (as Robotron's 3.2): the C game and the
+  emulated board run the same inputs side by side and their state (objects,
+  score, wave, random numbers, sound commands) is compared every frame;
+  regression traces of the C game; its pictures against the board's.
 - **MAME** (label `mame`): `mame_rom_map`; `mame_capture` (video RAM and
   palette decoding against MAME snapshots of attract-mode pages); `mame_emu`
   (the board from power-on with a scripted minute of play, against MAME's
@@ -110,6 +170,11 @@ Timing, found by comparing instruction traces (`mame_emu`):
 | E2 | Polish: pad play-testing (thrust and reverse placement; an option to thrust in the stick's direction needs the ship's facing from RAM), settings persistence, web build with IndexedDB CMOS, cocktail flip, device testing | Device checklist |
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
+| X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
+| C0 | Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
+| C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |
+| C2 | Remaining enemies (mutants, bombers, pods and swarmers, baiters), wave flow, planet destruction, extra lives | Side-by-side test over several waves |
+| C3 | Attract mode, high scores and initials, operator pages, 2 players; sounds from the WAVs; the C game becomes the default | Full scripted run matches; release with `assets/` only |
 
 ## 5. Fixes carried back to the Joust port (2026-10-20)
 

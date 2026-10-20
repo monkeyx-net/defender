@@ -17,13 +17,18 @@ code may be worth carrying across (the plan lists some), but ask first.
 
 ## Ground Rules
 
-- **The game is the ROM's own code** on the emulated board (`src/emu/`, plan
-  decision 6). MAME is the reference for the emulation: changes to `emu/`
-  must keep `mame_emu` (and the other `mame` tests) passing. Write all
-  emulation from the hardware's behaviour, not from MAME's source.
-- **No ROM-derived data in the repo or the binary** (plan, decision 1). Not
-  sprites, fonts, tables or sounds: the program reads the player's ROM set at
-  run time.
+- **The game is being rewritten in C** (plan decision 6), as the Robotron
+  port's was: game logic from the ROM's behaviour, checked frame by frame
+  against the emulated board (`src/emu/`). Until it reaches parity the
+  emulated board runs the game. MAME is the reference for the emulation:
+  changes to `emu/` must keep `mame_emu` (and the other `mame` tests)
+  passing. Write all emulation from the hardware's behaviour, not from
+  MAME's source.
+- **The ROM set is read once** (plan decision 1): `defender --extract`
+  writes pictures, font, logos, palette and sounds (and later tables) to
+  `assets/`, which the C game reads instead of the ROM. No ROM-derived data
+  in the repo, the binary or the packages: not sprites, fonts, tables or
+  sounds; the extractor's tables name ROM addresses only.
 - **All new code and tooling is C** (built with CMake). The one exception is
   MAME probe scripts, which must be Lua (MAME's scripting language); they only
   dump to text files, and C or CMake does the comparing.
@@ -45,6 +50,7 @@ build/defender --windowed --gfx hd-glow           # enhanced graphics (presets: 
 SDL_VIDEODRIVER=dummy build/defender --frames 60 --screenshot out.png   # headless screenshot
 build/defender --check-rom roms/defender.zip      # verify a ROM set
 build/defender --dump-rom roms/defender.zip C000 FFFF   # ROM bytes: "B:ADDR BYTE" per bank, then "ADDR BYTE"
+build/defender --extract roms/defender.zip [dir]  # assets from the ROM set (dev builds: build/assets after each build)
 cmake --build build --target package_linux package_portmaster   # release archives
 cmake -S . -B build-san -DDEFENDER_SANITIZE=ON    # ASan/UBSan build
 emcmake cmake -S . -B build-web && cmake --build build-web --target serve   # web build on http://localhost:8000/
@@ -58,7 +64,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   the graphics pipeline, CMOS saving, the controls page over the attract
   mode (after 30 s idle; `$A0BF` bit 5 tells a game from the attract mode),
   the test card (`--test-card`),
-  `--input`, `--frames`, `--screenshot`, `--rom`, `--check-rom`, `--dump-rom`
+  `--input`, `--frames`, `--screenshot`, `--rom`, `--check-rom`, `--dump-rom`,
+  `--extract`
 - `emu/` - the emulated hardware: `m6809.c` (main CPU), `pia6821.c`,
   `board.c` (Defender's main board: memory map with ROM banks and the I/O
   page, interrupts, CMOS, video counter, video per line), `m6800.c` +
@@ -73,7 +80,10 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   decoding)
 - `assets/` - `savefile.c` (the save folder: defender.cmos), `rom.c` (the
   defender set from a zip or folder, matched by CRC; fixed ROM and banks),
-  `zip.c`, `inflate.c`, `png.c` (RGB and RGBA), `assets.c` (asset folder lookup)
+  `zip.c`, `inflate.c`, `png.c` (RGB and RGBA), `assets.c` (asset folder lookup),
+  `extract.c` (the assets from the ROM set: pictures, font, logos and the
+  palette from the ROM and the emulated attract mode, WAVs from the
+  emulated sound board; `manifest.txt` written last)
 - `tests/` - C tests, MAME probes (`tests/mame/`)
 - `packaging/` - release layout script, PortMaster launcher and metadata
 - `web/` - page shell for the Emscripten build
@@ -93,6 +103,10 @@ Every change keeps `ctest` green.
 - `enhance` - always runs (scalers, presets, glow)
 - `rom_load` - label `rom`: loads the set from the zip, from renamed copies
   in a folder (CRC matching), and fails cleanly on an empty folder
+- `extract` - label `rom`: two extractions are byte-identical; every file
+  is there (31 pictures, 45 glyphs, 2 logos, 31 sound commands); the font
+  matches what the attract mode draws on the emulated board; no manifest
+  without a ROM set
 - `mame_rom_map` - label `mame`: MAME's view of the main CPU's ROM (each
   bank at $C000, then $D000-$FFFF) equals `defender --dump-rom`
 - `mame_capture` - label `mame`: runs the scripted game in

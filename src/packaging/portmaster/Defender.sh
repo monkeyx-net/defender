@@ -32,6 +32,11 @@ for rom in "$GAMEDIR/defender.zip" "$GAMEDIR/defender"; do
   [ -e "$rom" ] && export DEFENDER_ROM="$rom" && break
 done
 
+# first run: extract the pictures, font and sounds from the ROM set into assets/
+if [ ! -f "$DEFENDER_ASSETS/manifest.txt" ] && [ -n "$DEFENDER_ROM" ]; then
+  ./defender.${DEVICE_ARCH} --extract "$DEFENDER_ROM" "$DEFENDER_ASSETS"
+fi
+
 # gptokeyb only provides the exit hotkey; the game reads the pad itself
 $GPTOKEYB "defender.${DEVICE_ARCH}" &
 

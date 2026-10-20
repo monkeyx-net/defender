@@ -9,6 +9,8 @@ board (6809 main board with banked ROM, 6808 sound board), written in C and
 checked against MAME instruction for instruction; the port adds enhanced
 graphics presets, pad controls, CMOS saving and packaging for handhelds,
 desktops and the web. See [DEFENDER_PORT_PLAN.md](DEFENDER_PORT_PLAN.md).
+Next: the game rewritten in C, like the Robotron port, reading only the
+assets `--extract` writes from your ROM set once.
 
 You need your own MAME `defender` ROM set (`defender.zip`, red label); none is included.
 
@@ -55,6 +57,7 @@ build/defender [--windowed] [--gfx preset] [--rom path] [--test-card]
                [--input script.txt] [--frames N] [--screenshot out.png]
 build/defender --check-rom roms/defender.zip            # verify a ROM set
 build/defender --dump-rom roms/defender.zip C000 FFFF   # ROM bytes: "B:ADDR BYTE" per bank, then "ADDR BYTE"
+build/defender --extract roms/defender.zip [dir]  # pictures, font, logos, sounds into assets/
 ```
 
 - `--gfx`: `classic` (default), `classic-crt`, `crisp`, `smooth`, `hd-crisp`,
@@ -158,6 +161,8 @@ ctest --test-dir build -L mame      # needs MAME 0.289 and the ROM set
 
 - `enhance` (always): scalers, presets, glow.
 - `rom_load` (`rom`): the loader, from the zip and from renamed files.
+- `extract` (`rom`): the extractor; repeatable, complete, and its font
+  matches what the emulated attract mode draws.
 - `mame_rom_map` (`mame`): every ROM bank and the fixed ROM as MAME maps them.
 - `mame_capture` (`mame`): video and palette decoding against MAME snapshots.
 - `mame_emu` (`mame`): the emulated board from power-on through a scripted
