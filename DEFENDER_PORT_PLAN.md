@@ -107,9 +107,10 @@ Timing, found by comparing instruction traces (`mame_emu`):
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
 
-## 5. Fixes to carry back to the Joust port (ask first)
+## 5. Fixes carried back to the Joust port (2026-10-20)
 
-Found here in code copied from `../joust`; Joust's tests did not exercise them:
+Found here in code copied from `../joust` and applied there too (Joust's
+tests still pass, and 15 of its MAME frames with movement match):
 - `pia6821.c`: a write to port B's data direction register also changes the
   pins (port A already reported both).
 - `board.c`: the sound CPU catches up to the main CPU before a command
