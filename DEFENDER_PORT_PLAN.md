@@ -151,6 +151,34 @@ is $A0 throughout, so `<$xx` is $A0xx.
   (with carry), after a 16-bit shift register in `<$E0-<$E1` steps once
   (feedback bit 0 xor bit 3 of `<$E1`); returns `<$DF`. Called once per
   main-loop tick and by the game's routines.
+- **Controls** (bottom-half interrupt, $D5CB): `<$7B` = IN0, `<$7D` = IN1
+  (up), `<$7C` the previous IN0. A button newly down (up in the last two
+  reads) looks up its entry in the 4-byte table at $F882 (one per IN0
+  bit: process address, type, and a mask of `<$BA` bits that ignore it)
+  and is queued at `<$82` (or `<$86`) for the main loop to start: fire
+  $E591, smart bomb $E8C1, hyperspace $E91F, 2-player start $D84E, 1-player
+  start $D839, reverse $E897. Thrust, up and down are read as held.
+- **The ship** (ported: `src/sim/ship.c`, checked every frame by `sim`).
+  $E263 moves it and scrolls: velocity `<$C7-<$C9` (24 bits; world units a
+  frame x 256), friction -1/64 a frame, thrust adds `<$BD` ($0300 facing
+  right, $FD00 left), the scroll `<$20` moves by at most $100 units (8
+  pixels) a frame. World x has 32 units to a pixel: the planet is 2048
+  pixels around. The ship's screen x `<$C3` ($2000 facing right, $7000
+  left, in 1/256 byte) leads by speed / 8 in the facing's direction and
+  slides there by $100 a frame while `<$95` (±$40) holds it still in the
+  world; `<$CC` is its world x. Up and down: `<$CA` starts at ∓$100 (a line
+  a frame) and adds ∓8 a frame to ∓$200, within lines $2B-$EE of `<$C5`
+  (8.8). New ship ($D980): `<$BD` = `<$BB` = $0300, screen x $2000, y
+  $8000, at rest.
+- **Reverse** ($E897, once per press): `<$BB` = -`<$BD`; the ship turns
+  (`<$BD` = `<$BB`) when it is next drawn ($E237); then it waits for the
+  button's release and 5 more ticks (`<$AF` meanwhile).
+- **Hyperspace** ($E91F, not while `<$BA` has bits other than 1 set):
+  `<$BA` = $77, the screen is cleared ($F5F1), 15 ticks, shots removed; the
+  scroll becomes `<$DF-<$E0` (the random state), the facing bit 0 of `<$E0`
+  (right: screen x $2000, else left: $7000), y = `<$E0`/2 + $2A, at rest;
+  the ship reappears for 40 ticks, then dies ($DA46) when `<$E1` > $C0
+  (63 chances in 256).
 - **State**: `<$BA` holds the game's mode bits (bit 5: objects not drawn,
   bit 4: no ship, bit 6: no scrolling (likely), bit 1: no terrain (likely));
   `<$20` is the screen's left edge in world x; the scanner's work area is
@@ -196,6 +224,11 @@ Found by comparing instruction traces (`mame_emu`):
   (`extract`: two extractions are byte-identical, every file is there, the
   font matches the attract mode's "PRESENTS" pixel for pixel on the
   emulated board, no manifest without a ROM set).
+- **Side by side** (label `rom`): `sim` plays a scripted game on the
+  emulated board and checks each ported routine at every call: the state
+  the C version computed from the previous call equals the ROM's. Writes
+  from code not yet ported resynchronise it (counted). So far: the random
+  generator (5000 calls) and the ship (4400 frames).
 - **To add with the C game** (as Robotron's 3.2): the C game and the
   emulated board run the same inputs side by side and their state (objects,
   score, wave, random numbers, sound commands) is compared every frame;
@@ -216,6 +249,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E2 | Polish: pad play-testing (thrust and reverse placement; an option to thrust in the stick's direction needs the ship's facing from RAM), settings persistence, web build with IndexedDB CMOS, cocktail flip, device testing | Device checklist |
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
+| S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711) and the ship's motion (`ship.c`, $E263) | `sim` |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |
