@@ -53,6 +53,7 @@ add_library(defender_core STATIC
   src/sim/laser.c
   src/sim/sounds.c
   src/sim/objects.c
+  src/sim/processes.c
 )
 target_include_directories(defender_core PUBLIC src)
 target_link_libraries(defender_core PUBLIC m)

@@ -133,13 +133,19 @@ is $A0 throughout, so `<$xx` is $A0xx.
   sign of `<$BD`), the explosions ($FC66 → $FD2D), the random generator
   ($D711), switch presses queued at `<$82`/`<$86` become processes, then
   the processes run.
-- **Processes** (as in the other Williams games): list at $A05F, current in
+- **Processes** (ported: `src/sim/processes.c`, checked by `sim`; as in
+  the other Williams games): list at $A05F, current in
   `<$63`, free blocks in `<$61` (and larger ones in `<$69`). A block is
   +0 link, +2 resume address, +4 ticks to sleep, +5 type, +6 large flag,
   then the process's own data. $D055 creates one (X = address, A = type),
   $D03E a large one, $D000 sleeps (A ticks, X = where to resume), $D00A
-  ends the current one, $D015 kills process X. The dispatcher ($E84D)
-  counts each block's +4 down and jumps to +2 at zero.
+  ends the current one, $D015 kills process X (and returns the block before
+  it, where the dispatcher carries on). A new process goes right after the
+  current one with +4 = 1, so it runs in the same pass. The dispatcher
+  ($E84D) counts each block's +4 down and jumps to +2 at zero; $D07C kills
+  every process but the current one and those of type 2. Blocks: 75 of 15
+  bytes at $AAC5, 5 large ones of 23 bytes at $AF2A ($D7C6, only the
+  links).
 - **Objects** (ported: `src/sim/objects.c`, checked by `sim`): 95 blocks
   of 23 bytes at $A23C, set up by $D805 at a game's start (only the links:
   blocks keep their old contents). Lists: $A065 on screen (drawn, moved,
@@ -285,7 +291,9 @@ Found by comparing instruction traces (`mame_emu`):
   objects (67 taken, 15 freed, 4264 moves; writes to the pool from code
   not yet ported are copied to the C pool, ported routines run in C, and
   after each returns every list and live block is compared; paused while
-  the attract mode's logo blocks are on a list). Not covered yet: an
+  the attract mode's logo blocks are on a list) and the processes (154
+  created, 144 killed, 9775 sleeps, 32817 countdowns, compared after each
+  call and at each step of the dispatcher). Not covered yet: an
   object's y wrapping (no object crosses in the scripted minute). The board
   calls the step hook also before an instruction the CPU then puts off for
   an interrupt; `sim` ignores those calls (IRQ or FIRQ pending and not
@@ -311,7 +319,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E2 | Polish: pad play-testing (thrust and reverse placement; an option to thrust in the stick's direction needs the ship's facing from RAM), settings persistence, web build with IndexedDB CMOS, cocktail flip, device testing | Device checklist |
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
-| S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte), the sound sequencer (`sounds.c`, $D539-$D5A6), the object pool and lists (`objects.c`) | `sim` |
+| S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte), the sound sequencer (`sounds.c`, $D539-$D5A6), the object pool and lists (`objects.c`), the process pool and dispatcher's bookkeeping (`processes.c`) | `sim` |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |

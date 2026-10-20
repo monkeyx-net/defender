@@ -14,6 +14,10 @@
  *     $D805, take $D0AD, set $D095, free $D0C7 / $D0F2, move $E376) run in
  *     C when the ROM calls them, and after each the lists and every block
  *     on them equal the board's RAM
+ *   - processes.c: the process pool and running list, the same way (set
+ *     up $D7C6, create $D055 / $D03E, sleep $D001, kill $D015, the
+ *     dispatcher's countdown $E84D); compared after each call returns and
+ *     at each step of the dispatcher
  *   - laser.c: each laser process's head, middle and tail at every tick
  *     equal the C laser's, and every byte the C laser writes to the screen
  *     (and the colour pointer <$A4) is what the ROM wrote once it has drawn
@@ -29,6 +33,7 @@
 #include "emu/board.h"
 #include "sim/laser.h"
 #include "sim/objects.h"
+#include "sim/processes.h"
 #include "sim/rng.h"
 #include "sim/ship.h"
 #include "sim/sounds.h"
@@ -66,6 +71,16 @@
 #define OBJ_FREE_END 0xD0F8
 #define OBJ_MOVE 0xE376
 #define OBJ_MOVE_END 0xE39E
+#define PROC_SETUP 0xD7C6
+#define PROC_SETUP_END 0xD7F4
+#define PROC_SLEEP 0xD001   /* $D000 is DECA, then here */
+#define PROC_KILL 0xD015
+#define PROC_KILL_END 0xD03D
+#define PROC_CREATE_LARGE 0xD03E
+#define PROC_CREATE 0xD055
+#define PROC_CREATE_END 0xD07B
+#define PROC_TICK 0xE84D
+#define PROC_NEXT 0xE856
 #define SOUNDS_START 0xD54D
 #define SOUNDS_START_CLEARED 0xD551 /* <$AD cleared */
 #define SOUNDS_START_DONE 0xD566     /* the script stored (the interrupt masked from $D55D) */
@@ -80,10 +95,13 @@ static uint16_t pc; /* the instruction running */
 static Rng rng;
 static Ship ship;
 static int rng_sync = 1, ship_sync = 1, failures;
+static Processes procs;
+static int procs_valid;
+static long proc_inits, proc_creates, proc_sleeps, proc_kills, proc_ticks, proc_compares, proc_mirrored;
 static Objects objs;
 static int objs_valid; /* from the first $D805 on */
 /* ported routines running: compare when each returns (its return address and stack) */
-static struct { uint16_t ret, sp; } obj_calls[8];
+static struct { uint16_t ret, sp; int procs; } obj_calls[8];
 static int obj_depth;
 static long obj_inits, obj_allocs, obj_setups, obj_frees, obj_moves;
 static long obj_compares, obj_mirrored, obj_pauses;
@@ -320,12 +338,99 @@ static void obj_compare(void)
     if (objs_valid) obj_compare_list(LIST_FREE, "free");
 }
 
-static void obj_call(Board *b)
+static void obj_call_of(Board *b, int procs)
 {
     if (obj_depth < (int)(sizeof obj_calls / sizeof obj_calls[0])) {
         obj_calls[obj_depth].ret = peek16(b->cpu.s);
         obj_calls[obj_depth].sp = (uint16_t)(b->cpu.s + 2);
+        obj_calls[obj_depth].procs = procs;
         obj_depth++;
+    }
+}
+
+static void obj_call(Board *b) { obj_call_of(b, 0); }
+
+static int proc_ported(uint16_t at)
+{
+    return (at >= PROC_SLEEP && at <= PROC_CREATE_END) || (at >= PROC_SETUP && at <= PROC_SETUP_END) ||
+           (at >= PROC_TICK && at <= PROC_NEXT + 1) || at == 0xD000;
+}
+
+/* Compare the running list (every block on it) and the free lists. */
+static void proc_compare(void)
+{
+    static const uint16_t words[4] = { PROCESS_HEAD, PROCESS_FREE, PROCESS_CURRENT, PROCESS_FREE_LARGE };
+    proc_compares++;
+    for (int i = 0; i < 4; i++)
+        if (word(words[i]) != (uint16_t)(processes_peek(&procs, words[i]) << 8 | processes_peek(&procs, words[i] + 1))) {
+            if (failures++ < 5)
+                fprintf(stderr, "test_sim: frame %lld: process word $%04X = %04X, C %02X%02X (at %04X)\n",
+                        (long long)board.frame, words[i], word(words[i]), processes_peek(&procs, words[i]),
+                        processes_peek(&procs, words[i] + 1), pc);
+            return;
+        }
+    static const uint16_t heads[3] = { PROCESS_HEAD, PROCESS_FREE, PROCESS_FREE_LARGE };
+    for (int h = 0; h < 3; h++) {
+        uint16_t a = word(heads[h]);
+        for (int n = 0; a && n <= PROCESSES + LARGES; n++) {
+            Process *blk = processes_at(&procs, a);
+            if (!blk) {
+                if (failures++ < 5) fprintf(stderr, "test_sim: frame %lld: process %04X outside the pools\n", (long long)board.frame, a);
+                return;
+            }
+            int size = h == 0 ? (blk->large ? LARGE_SIZE : PROCESS_SIZE) : 2; /* free blocks: their links */
+            for (int i = 0; i < size; i++)
+                if (*ram(a + i) != processes_peek(&procs, (uint16_t)(a + i))) {
+                    if (failures++ < 5)
+                        fprintf(stderr, "test_sim: frame %lld: process %04X +%02X = %02X, C %02X (at %04X)\n",
+                                (long long)board.frame, a, i, *ram(a + i), processes_peek(&procs, (uint16_t)(a + i)), pc);
+                    return;
+                }
+            a = word(a);
+        }
+    }
+}
+
+static void processes_hook(Board *b)
+{
+    switch (pc) {
+    case PROC_SETUP:
+        if (!procs_valid) /* the blocks keep what they held */
+            for (unsigned a = PROCESSES_FIRST; a < LARGE_FIRST + LARGES * LARGE_SIZE; a++)
+                if (processes_peek(&procs, (uint16_t)a) >= 0) processes_poke(&procs, (uint16_t)a, *ram(a));
+        processes_init(&procs);
+        procs_valid = 1;
+        proc_inits++;
+        obj_call_of(b, 1);
+        break;
+    case PROC_CREATE:
+    case PROC_CREATE_LARGE:
+        if (!procs_valid) break;
+        if (!processes_create(&procs, b->cpu.x, b->cpu.a, pc == PROC_CREATE_LARGE) && failures++ < 5)
+            fprintf(stderr, "test_sim: frame %lld: C cannot create a process\n", (long long)b->frame);
+        proc_creates++;
+        obj_call_of(b, 1);
+        break;
+    case PROC_SLEEP:
+        if (!procs_valid) break;
+        processes_sleep(&procs, b->cpu.a, b->cpu.x);
+        proc_sleeps++;
+        break;
+    case PROC_KILL:
+        if (!procs_valid) break;
+        if (!processes_kill(&procs, b->cpu.x) && failures++ < 5)
+            fprintf(stderr, "test_sim: frame %lld: C cannot kill process %04X\n", (long long)b->frame, b->cpu.x);
+        proc_kills++;
+        obj_call_of(b, 1);
+        break;
+    case PROC_TICK:
+        if (!procs_valid) break;
+        processes_tick(&procs, b->cpu.u);
+        proc_ticks++;
+        break;
+    case PROC_NEXT:
+        if (procs_valid) proc_compare();
+        break;
     }
 }
 
@@ -468,8 +573,15 @@ static void step_hook(Board *b)
     /* a ported object routine has returned: compare */
     if (obj_depth && pc == obj_calls[obj_depth - 1].ret && b->cpu.s == obj_calls[obj_depth - 1].sp) {
         obj_depth--;
-        if (objs_valid) obj_compare();
+        if (obj_calls[obj_depth].procs) {
+            if (procs_valid) proc_compare();
+        } else if (objs_valid) {
+            obj_compare();
+        }
     }
+    if (pc == PROC_SETUP || pc == PROC_CREATE || pc == PROC_CREATE_LARGE || pc == PROC_SLEEP || pc == PROC_KILL ||
+        pc == PROC_TICK || pc == PROC_NEXT)
+        processes_hook(b);
     if (pc == OBJ_SETUP_POOL || pc == OBJ_ALLOC || pc == OBJ_CREATE_SET || pc == OBJ_FREE || pc == OBJ_FREE_SHOT ||
         pc == OBJ_MOVE)
         objects_hook(b);
@@ -514,6 +626,10 @@ static void write_hook(Board *b, uint16_t a, uint8_t v)
     if (a >= 0xA0DF && a <= 0xA0E1 && !(pc >= RNG_CALL && pc < RNG_END) && !rng_sync) {
         rng_sync = 1;
         rng_resyncs++;
+    }
+    if (procs_valid && processes_peek(&procs, a) >= 0 && !proc_ported(pc)) {
+        processes_poke(&procs, a, v);
+        proc_mirrored++;
     }
     if (objs_valid && objects_peek(&objs, a) >= 0 && !obj_ported(pc)) {
         objects_poke(&objs, a, v);
@@ -588,6 +704,9 @@ int main(int argc, char **argv)
            rng_checks, rng_resyncs, rng_nested, ship_checks, ship_resyncs);
     printf("test_sim: sounds: %ld frames, %ld scripts started, %ld sounds sent (%ld resyncs)\n", sound_ticks,
            sound_starts, sound_sends, sound_resyncs);
+    printf("test_sim: processes: %ld set-ups, %ld created, %ld sleeps, %ld killed, %ld countdowns; %ld comparisons,\n"
+           "          %ld writes from unported code copied\n",
+           proc_inits, proc_creates, proc_sleeps, proc_kills, proc_ticks, proc_compares, proc_mirrored);
     printf("test_sim: objects: %ld set-ups, %ld taken, %ld set, %ld freed, %ld moves; %ld comparisons, %ld writes\n"
            "          from unported code copied, %ld pauses\n",
            obj_inits, obj_allocs, obj_setups, obj_frees, obj_moves, obj_compares, obj_mirrored, obj_pauses);
@@ -596,7 +715,7 @@ int main(int argc, char **argv)
            laser_ends, laser_bytes, laser_overdrawn);
     if (rng_checks < 1000 || ship_checks < 1000 || laser_ticks < 100 || laser_ends < 10 ||
         sound_ticks < 1000 || sound_sends < 50 || obj_compares < 1000 ||
-        obj_allocs < 50 || obj_frees < 10) {
+        obj_allocs < 50 || obj_frees < 10 || proc_creates < 100 || proc_kills < 50) {
         fprintf(stderr, "test_sim: too few checks\n");
         return 1;
     }
