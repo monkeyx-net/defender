@@ -2,7 +2,8 @@
  * The extractor (label rom):  test_extract <defender.zip|folder> <work dir>
  *   - extracts twice (<work>/a, <work>/b): the folders are byte-identical
  *   - each file is there: manifest, 31 picture descriptors, 45 glyphs, both
- *     logos, the palette, and a WAV of the stated length for every sound
+ *     logos, the palette, a WAV of the stated length for every sound, and
+ *     the 26 sound scripts
  *   - the font is the ROM's: each letter of "PRESENTS" appears, pixel for
  *     pixel, where the attract mode wrote the word (the emulated board)
  *   - with no ROM set loaded it fails and writes no manifest
@@ -193,6 +194,7 @@ int main(int argc, char **argv)
     static const char *const files[] = {
         EXTRACT_MANIFEST, "gfx/pictures.txt", "gfx/font.txt", "gfx/logos.txt", "gfx/palette.txt",
         "gfx/pictures.png", "gfx/font.png", "gfx/williams.png", "gfx/defender.png", "sounds/sounds.txt",
+        "sounds/scripts.txt",
     };
     for (size_t i = 0; i < sizeof files / sizeof files[0]; i++) same_file(a, b, files[i]);
 
@@ -210,6 +212,10 @@ int main(int argc, char **argv)
     free(font);
     free(logos);
 
+    char *scripts = slurp(a, "sounds/scripts.txt", NULL);
+    CHECK(scripts && count_lines(scripts, "script ") == 26, "scripts.txt has %d scripts, not 26",
+          scripts ? count_lines(scripts, "script ") : 0);
+    free(scripts);
     check_sounds(a);
     check_font(a);
 

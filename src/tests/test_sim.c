@@ -6,6 +6,9 @@
  *     which then steps
  *   - ship.c: at every call of $E263, the ship and scroll state equals the
  *     C model's, which then steps with the controls and facing in RAM
+ *   - sounds.c: at every frame's step ($D568) the sequencer's state equals
+ *     the C one's (started by every $D54D), and each sound it sends ($D539)
+ *     is the one the C sequencer returned
  *   - laser.c: each laser process's head, middle and tail at every tick
  *     equal the C laser's, and every byte the C laser writes to the screen
  *     (and the colour pointer <$A4) is what the ROM wrote once it has drawn
@@ -22,6 +25,7 @@
 #include "sim/laser.h"
 #include "sim/rng.h"
 #include "sim/ship.h"
+#include "sim/sounds.h"
 
 #define PRIME_FRAMES 1800
 #define FRAMES 5200
@@ -44,6 +48,12 @@
 #define LASER_ENDED 0xE69A
 #define VRAM 0xC000
 #define COLOURS_FILL 0xE69F
+#define SOUNDS_START 0xD54D
+#define SOUNDS_START_CLEARED 0xD551 /* <$AD cleared */
+#define SOUNDS_START_DONE 0xD566     /* the script stored (the interrupt masked from $D55D) */
+#define SOUNDS_TICK 0xD568
+#define SOUNDS_TICK_DONE 0xD5A8
+#define SOUNDS_SEND 0xD539
 #define COLOURS_FILLED 0xE6B9
 
 static RomSet rom;
@@ -52,6 +62,11 @@ static uint16_t pc; /* the instruction running */
 static Rng rng;
 static Ship ship;
 static int rng_sync = 1, ship_sync = 1, failures;
+static uint8_t fixed_rom[0x10000]; /* $D000-$FFFF: the scripts the C sequencer reads */
+static Sounds sounds;
+static int sounds_sync = 1, sound_expected = -1, sound_in_tick, sound_sent;
+static int sound_pending = -1; /* a script $D54D is starting */
+static long sound_ticks, sound_sends, sound_starts, sound_resyncs;
 static long laser_ticks, laser_ends, laser_bytes, laser_left, laser_right, colour_fills;
 static LaserColours colours_want;
 static long colours_nested;
@@ -62,8 +77,6 @@ typedef struct {
     uint16_t u;
     int have;          /* `next` holds the C laser's state for the next tick */
     Laser next;
-    Laser from;        /* the RAM state `next` was predicted from */
-    int from_valid;
     uint16_t colours;  /* <$A4 expected once drawn */
     int writes;        /* the expected bytes below are valid */
 } LaserCheck;
@@ -197,8 +210,6 @@ static void laser_hook(Board *b)
         LaserCheck *c = laser_check(u);
         Laser now;
         laser_from_ram(&now, u, pc == LASER_TICK_L);
-        /* the hook again, after an interrupt put the instruction off */
-        if (c->from_valid && now.head == c->from.head && now.mid == c->from.mid && now.tail == c->from.tail) break;
         if (c->have) {
             laser_ticks++;
             if ((now.head != c->next.head || now.mid != c->next.mid || now.tail != c->next.tail) && failures++ < 5)
@@ -207,8 +218,6 @@ static void laser_hook(Board *b)
                         c->next.tail);
         }
         laser_predict(c, pc == LASER_TICK_L, 0);
-        c->from = now;
-        c->from_valid = 1;
         break;
     }
     case LASER_DRAWN_R:
@@ -229,16 +238,76 @@ static void laser_hook(Board *b)
     }
 }
 
+static uint16_t sounds_b0(void) { return (uint16_t)((sounds.script - fixed_rom) + sounds.pos); }
+
+static void sounds_hook(Board *b)
+{
+    switch (pc) {
+    /* an interrupt's tick can run between $D54D's start and its stores: the
+       C sequencer follows the ROM's order */
+    case SOUNDS_START:
+        sound_pending = b->cpu.a << 8 | b->cpu.b;
+        break;
+    case SOUNDS_START_CLEARED:
+        sounds.thrust = 0;
+        break;
+    case SOUNDS_START_DONE:
+        if (sound_pending >= 0 && !sounds_sync) {
+            uint8_t thrust = sounds.thrust;
+            sounds_start(&sounds, fixed_rom + sound_pending);
+            sounds.thrust = thrust;
+            sound_starts++;
+        }
+        sound_pending = -1;
+        break;
+    case SOUNDS_TICK:
+        if (!sounds_sync) {
+            sound_ticks++;
+            if ((*ram(0xA0B2) != sounds.priority || *ram(0xA0B3) != sounds.timer || *ram(0xA0B4) != sounds.repeat ||
+                 *ram(0xA0AD) != sounds.thrust || (sounds.script && word(0xA0B0) != sounds_b0())) &&
+                failures++ < 5)
+                fprintf(stderr,
+                        "test_sim: frame %lld: sound sequencer B0-B4 %04X %02X %02X %02X AD %02X, C %04X %02X %02X %02X %02X\n",
+                        (long long)b->frame, word(0xA0B0), *ram(0xA0B2), *ram(0xA0B3), *ram(0xA0B4), *ram(0xA0AD),
+                        sounds_b0(), sounds.priority, sounds.timer, sounds.repeat, sounds.thrust);
+        }
+        sounds.script = fixed_rom + word(0xA0B0); /* from RAM, so a difference is reported once */
+        sounds.pos = 0;
+        sounds.priority = *ram(0xA0B2);
+        sounds.timer = *ram(0xA0B3);
+        sounds.repeat = *ram(0xA0B4);
+        sounds.thrust = *ram(0xA0AD);
+        sounds_sync = 0;
+        sound_expected = sounds_tick(&sounds, *ram(0xA07B), *ram(0xA0BA));
+        sound_in_tick = 1;
+        sound_sent = 0;
+        break;
+    case SOUNDS_SEND:
+        if (sound_in_tick) {
+            sound_sent = 1;
+            sound_sends++;
+            if (b->cpu.b != sound_expected && failures++ < 5)
+                fprintf(stderr, "test_sim: frame %lld: sound %02X sent, C %02X\n", (long long)b->frame, b->cpu.b,
+                        sound_expected & 0xFF);
+        }
+        break;
+    case SOUNDS_TICK_DONE:
+        if (sound_in_tick && !sound_sent && sound_expected >= 0 && failures++ < 5)
+            fprintf(stderr, "test_sim: frame %lld: no sound sent, C %02X\n", (long long)b->frame, sound_expected);
+        sound_in_tick = 0;
+        break;
+    }
+}
+
 static void step_hook(Board *b)
 {
     pc = b->cpu.pc;
-    /* The hook also runs before an instruction the CPU then puts off to take
-       an interrupt; it runs again when the instruction does. The stack
-       pointer tells the two apart. */
+    /* The board calls the hook before each step, also one that then takes
+       an interrupt instead; it comes again when the instruction runs. */
+    if ((b->cpu.irq && !(b->cpu.cc & CC_I)) || (b->cpu.firq && !(b->cpu.cc & CC_F))) return;
     uint16_t sp = b->cpu.s;
     if (pc == RNG_RETURN && rng_depth > 0 && sp == (uint16_t)(rng_stack[rng_depth - 1] - 1)) rng_depth--;
     if (pc == RNG_CALL) {
-        if (rng_depth > 0 && rng_stack[rng_depth - 1] == sp) return; /* seen already */
         /* the interrupt can call it while the main loop is part way through:
            both calls then work on the same bytes, so start afresh after it */
         if (rng_depth > 0) {
@@ -262,6 +331,7 @@ static void step_hook(Board *b)
         rng_step(&rng);
     }
     if (pc >= LASER_START_R && pc <= LASER_ENDED) laser_hook(b);
+    if (pc == SOUNDS_START || pc == SOUNDS_START_CLEARED || pc == SOUNDS_START_DONE || pc == SOUNDS_TICK || pc == SOUNDS_SEND || pc == SOUNDS_TICK_DONE) sounds_hook(b);
     if (pc == COLOURS_FILL) {
         Rng r = { *ram(0xA0DF), *ram(0xA0E0), *ram(0xA0E1) };
         laser_colours_fill(&colours_want, &r);
@@ -302,6 +372,11 @@ static void write_hook(Board *b, uint16_t a, uint8_t v)
     if (a >= 0xA0DF && a <= 0xA0E1 && !(pc >= RNG_CALL && pc < RNG_END) && !rng_sync) {
         rng_sync = 1;
         rng_resyncs++;
+    }
+    if (((a >= 0xA0B0 && a <= 0xA0B4) || a == 0xA0AD) && !(pc >= SOUNDS_SEND && pc < SOUNDS_TICK_DONE) &&
+        !sounds_sync) {
+        sounds_sync = 1;
+        sound_resyncs++;
     }
     int ship_ram = a == 0xA020 || a == 0xA021 || a == 0xA022 || a == 0xA023 || a == 0xA095 || a == 0xA096 ||
                    (a >= 0xA0C3 && a <= 0xA0CD);
@@ -356,6 +431,7 @@ int main(int argc, char **argv)
     for (int i = 0; i < PRIME_FRAMES; i++) board_run_frame(&board, NULL);
     memcpy(cmos, board.cmos, sizeof cmos);
     board_init(&board, &rom, cmos);
+    for (unsigned a = 0xD000; a <= 0xFFFF; a++) fixed_rom[a] = (uint8_t)rom_byte(&rom, a);
     board.step_hook = step_hook;
     board.write_hook = write_hook;
     for (long f = 1; f <= FRAMES; f++) {
@@ -364,10 +440,13 @@ int main(int argc, char **argv)
     }
     printf("test_sim: random %ld calls checked (%ld resyncs, %ld nested), ship %ld frames checked (%ld resyncs)\n",
            rng_checks, rng_resyncs, rng_nested, ship_checks, ship_resyncs);
+    printf("test_sim: sounds: %ld frames, %ld scripts started, %ld sounds sent (%ld resyncs)\n", sound_ticks,
+           sound_starts, sound_sends, sound_resyncs);
     printf("test_sim: laser colour tables: %ld checked\n", colour_fills);
     printf("test_sim: lasers: %ld right, %ld left, %ld ticks, %ld ends, %ld screen bytes checked (%ld drawn over since)\n", laser_right, laser_left, laser_ticks,
            laser_ends, laser_bytes, laser_overdrawn);
-    if (rng_checks < 1000 || ship_checks < 1000 || laser_ticks < 100 || laser_ends < 10) {
+    if (rng_checks < 1000 || ship_checks < 1000 || laser_ticks < 100 || laser_ends < 10 ||
+        sound_ticks < 1000 || sound_sends < 50) {
         fprintf(stderr, "test_sim: too few checks\n");
         return 1;
     }

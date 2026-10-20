@@ -181,6 +181,26 @@ is $A0 throughout, so `<$xx` is $A0xx.
   cycles), and the tail clears a byte a tick. Then the hit test: the 8 x 1
   line $F96F at the head (6 columns back facing right) against the objects
   ($E5AB → $E6BA). A hit, the edge or `<$BA` bit 6 erases it tail to head.
+- **Smart bomb** ($E8C1): not while one is going (`<$9A`) or with none
+  left (the player block `<$8D` +9, decremented; $D680 redraws the HUD);
+  script $D4D2. It calls the hit handler (+8) of every object on screen
+  (+4 not 0) with +14 below 2, from the list's head again after each (the
+  handler unlinks it); then inverts palette entry 0 (`<$26`, the
+  background) 4 times 2 ticks apart, waits 10 ticks, while the button is
+  held 10 more at a time, then 10 more before another bomb. Ported with
+  the objects.
+- **Sound** (ported: `src/sim/sounds.c`, checked by `sim`): $D539 sends a
+  sound number B to the board as $3F then ~B & $3F, so the board plays
+  command ~B & $1F (the extractor's WAV). $D54D starts a script (`<$AD`
+  cleared even when the script does not start); 26 scripts sit back to
+  back at $D4AB-$D538, extracted to `sounds/scripts.txt`: a priority, then
+  (count, ticks, sound) entries ending in a 0 count. A script starts at or
+  above the playing one's priority (`<$B2`); `<$B0` points at the entry
+  (less 1), `<$B3` counts ticks, `<$B4` repeats. $D568, once a frame in the
+  interrupt, steps it; with no script it sends $16 (command $09, a loop)
+  when thrust is pressed (unless `<$BA` has bits $98) and $0F (command
+  $10) when released (`<$AD`). Sounds play on the board until the next
+  command replaces them. Laser: $D51B; smart bomb: $D4D2.
 - **Hit test** ($E6BA; D = a screen position, U = a picture descriptor,
   X = the list, $A065 by default): bounding boxes against each drawn
   object (its +4 screen position and its picture's size), then the two
@@ -247,9 +267,12 @@ Found by comparing instruction traces (`mame_emu`):
   from code not yet ported resynchronise it (counted). So far: the random
   generator (5000 calls), the ship (4400 frames) and the laser (65
   lasers, 1700 ticks, 16000 screen bytes; bytes the interrupt draws over
-  between the laser's write and the check are skipped and counted). The
-  hook also runs before an instruction the CPU puts off for an interrupt;
-  the checks recognise the repeat (same stack pointer, same state).
+  between the laser's write and the check are skipped and counted) and the
+  sound sequencer (4400 frames, 97 scripts, 125 sounds sent). The board
+  calls the step hook also before an instruction the CPU then puts off for
+  an interrupt; `sim` ignores those calls (IRQ or FIRQ pending and not
+  masked). Where an interrupt can run in the middle of a routine, the
+  check follows the ROM's order of stores.
 - **To add with the C game** (as Robotron's 3.2): the C game and the
   emulated board run the same inputs side by side and their state (objects,
   score, wave, random numbers, sound commands) is compared every frame;
@@ -270,7 +293,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E2 | Polish: pad play-testing (thrust and reverse placement; an option to thrust in the stick's direction needs the ship's facing from RAM), settings persistence, web build with IndexedDB CMOS, cocktail flip, device testing | Device checklist |
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
-| S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte) | `sim` |
+| S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte), the sound sequencer (`sounds.c`, $D539-$D5A6) | `sim` |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |

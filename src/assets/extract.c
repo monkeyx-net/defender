@@ -32,6 +32,8 @@
 #define SOUND_LOOP_SECONDS 4  /* what a looping sound's WAV keeps */
 #define SOUND_TAIL (SOUND_RATE / 20)
 #define SOUND_COMMANDS 31     /* $00-$1E; $1F is the game's "no command" */
+#define SCRIPTS_FIRST 0xD4AB  /* the sound scripts, back to back ... */
+#define SCRIPTS_END 0xD539    /* ... up to the code that sends a sound */
 
 /* The picture descriptors in the fixed ROM. Six-byte or longer entries hold
    even-x and odd-x data; `four` entries hold one data pointer only. */
@@ -451,6 +453,35 @@ static int extract_sounds(const char *dir, const RomSet *rom, char *err, int err
     return write_text(dir, "sounds/sounds.txt", &t, err, errlen);
 }
 
+/* The sound sequencer's scripts (sim/sounds.h): priority, then (count,
+   ticks, sound) entries ending with a 0 count. */
+static int extract_scripts(const RomSet *rom, const char *dir, char *err, int errlen)
+{
+    Text t = {0};
+    put(&t, "# Sound scripts, ROM $%04X-$%04X (extracted; do not edit)\n"
+            "# script <address> <priority>, then its entries: <count> <ticks> <sound>; the\n"
+            "# board plays command ~sound & $1F (sounds/NN.wav)\n", SCRIPTS_FIRST, SCRIPTS_END - 1);
+    unsigned a = SCRIPTS_FIRST;
+    while (a < SCRIPTS_END) {
+        put(&t, "script %04X %02X\n", a, rom_byte(rom, a));
+        a++;
+        int entries = 0;
+        while (a < SCRIPTS_END && rom_byte(rom, a) != 0) {
+            if (a + 3 > SCRIPTS_END) break;
+            put(&t, "%d %d %02X\n", rom_byte(rom, a), rom_byte(rom, a + 1), rom_byte(rom, a + 2));
+            a += 3;
+            entries++;
+        }
+        a++; /* the 0 count */
+        if (!entries || a > SCRIPTS_END) {
+            snprintf(err, (size_t)errlen, "sound scripts: unexpected layout at $%04X", a);
+            free(t.s);
+            return -1;
+        }
+    }
+    return write_text(dir, "sounds/scripts.txt", &t, err, errlen);
+}
+
 /* ---- all ------------------------------------------------------------------- */
 
 int extract_all(const RomSet *rom, const char *out_dir, char *err, int errlen)
@@ -476,7 +507,8 @@ int extract_all(const RomSet *rom, const char *out_dir, char *err, int errlen)
     if (extract_screens(rom, out_dir, play_pal, err, errlen) ||
         extract_pictures(rom, out_dir, play_pal, err, errlen) ||
         extract_font(rom, out_dir, play_pal, err, errlen) ||
-        extract_sounds(out_dir, rom, err, errlen))
+        extract_sounds(out_dir, rom, err, errlen) ||
+        extract_scripts(rom, out_dir, err, errlen))
         return -1;
     Text t = {0};
     put(&t, "defender assets %d\n", EXTRACT_VERSION);

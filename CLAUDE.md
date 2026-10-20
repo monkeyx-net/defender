@@ -75,7 +75,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   control panel; pads and keyboard), `audio.c` (streams the board's sound)
 - `sim/` - the game in C, piece by piece (plan decision 6): `rng.c` (the
   random generator, $D711), `ship.c` (the ship's motion and scrolling,
-  $E263), `laser.c` (the laser, drawn into arcade-layout video RAM);
+  $E263), `laser.c` (the laser, drawn into arcade-layout video RAM),
+  `sounds.c` (the sound sequencer: scripts, thrust sound);
   each mirrors a ROM routine's arithmetic exactly
 - `gfx/` - draws into the framebuffer in arcade coordinates (`fb.scale` > 1 for
   HD): `fb.c`, `blit.c`, `scale.c` (Scale2x/3x, xBR), `enhance.c` (graphics
@@ -87,7 +88,7 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   `zip.c`, `inflate.c`, `png.c` (RGB and RGBA), `assets.c` (asset folder lookup),
   `extract.c` (the assets from the ROM set: pictures, font, logos and the
   palette from the ROM and the emulated attract mode, WAVs from the
-  emulated sound board; `manifest.txt` written last)
+  emulated sound board, the sound scripts; `manifest.txt` written last)
 - `tests/` - C tests, MAME probes (`tests/mame/`)
 - `packaging/` - release layout script, PortMaster launcher and metadata
 - `web/` - page shell for the Emscripten build
@@ -108,15 +109,16 @@ Every change keeps `ctest` green.
 - `rom_load` - label `rom`: loads the set from the zip, from renamed copies
   in a folder (CRC matching), and fails cleanly on an empty folder
 - `extract` - label `rom`: two extractions are byte-identical; every file
-  is there (31 pictures, 45 glyphs, 2 logos, 31 sound commands); the font
+  is there (31 pictures, 45 glyphs, 2 logos, 31 sound commands, 26 sound
+  scripts); the font
   matches what the attract mode draws on the emulated board; no manifest
   without a ROM set
 - `sim` - label `rom`: plays a scripted game on the emulated board and
   checks each `sim/` routine against the ROM's at every call: state, and
   the screen bytes it writes (writes from
-  code not yet ported resynchronise it; the step hook also fires before an
-  instruction the CPU puts off for an interrupt, so calls are told apart by
-  the stack pointer)
+  code not yet ported resynchronise it; the board calls the step hook also
+  before an instruction the CPU then puts off for an interrupt: ignore
+  calls with an IRQ or FIRQ pending and unmasked)
 - `mame_rom_map` - label `mame`: MAME's view of the main CPU's ROM (each
   bank at $C000, then $D000-$FFFF) equals `defender --dump-rom`
 - `mame_capture` - label `mame`: runs the scripted game in

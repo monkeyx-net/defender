@@ -18,6 +18,9 @@
  *   sounds/sounds.txt per command: once, loop (still playing after
  *                     SOUND_MAX_SECONDS; the WAV holds its first seconds) or
  *                     none (no output on its own)
+ *   sounds/scripts.txt  the game's 26 sound scripts, $D4AB-$D538
+ *                     (priority; count, ticks and sound per entry;
+ *                     sim/sounds.h)
  *   manifest.txt      written last: the folder is complete
  *
  * Pictures and glyphs are rows of hex digits, one palette index per pixel.
@@ -28,7 +31,7 @@
 #include "assets/rom.h"
 
 #define EXTRACT_MANIFEST "manifest.txt"
-#define EXTRACT_VERSION 1
+#define EXTRACT_VERSION 2
 
 /* Write everything to out_dir (created if needed). Returns 0, or -1 with a
    message in err; without manifest.txt the folder counts as missing. */
