@@ -110,7 +110,53 @@ Confirmed in this repo (each by a `mame` test):
   themselves, the longest in about 17 s. The sound CPU's idle loop is at
   $FD12.
 
-### 2.2 Timing
+### 2.2 The game program (C0, started 2026-10-20)
+
+Read from the disassembly (`dasm_probe.lua`) and the emulated board; items
+marked (likely) are not yet confirmed by a trace or a RAM probe. Direct page
+is $A0 throughout, so `<$xx` is $A0xx.
+- **Interrupt** ($FFF8 → $A08F, a `JMP $DF17` the game writes to RAM;
+  $DFC3 is a second handler with a different split (likely the cocktail
+  table)). It reads the video counter and works on the half of the screen
+  the beam is not on:
+  - beam at line $80 or below (once a frame): the sound sequencer ($D568),
+    scrolling and the ship's motion ($E263), the scanner ($E07E), then the
+    objects, ship and shots in the top half ($E39F, $E213, $E453);
+  - beam above line $80: sets the tick flag `<$5D`, feeds the watchdog
+    ($C3FC), copies the palette shadow `<$26-<$35` to $C000-$C00F (near the
+    top of the frame), reads the coin switches ($D5FD), calls bank 7 $C003
+    unless `<$BA` bit 1 is set (likely the terrain), then the ship and the
+    objects in the bottom half and moves the objects ($E376).
+- **Main loop** ($E7BE): waits for `<$5D`; if ticks were missed it drops
+  objects from the screen list ($E7C9-$E818: likely load shedding); then the
+  ship's collisions ($E861: picture $F9C1 facing right, $F9CB left, by the
+  sign of `<$BD`), the explosions ($FC66 → $FD2D), the random generator
+  ($D711), switch presses queued at `<$82`/`<$86` become processes, then
+  the processes run.
+- **Processes** (as in the other Williams games): list at $A05F, current in
+  `<$63`, free blocks in `<$61` (and larger ones in `<$69`). A block is
+  +0 link, +2 resume address, +4 ticks to sleep, +5 type, +6 large flag,
+  then the process's own data. $D055 creates one (X = address, A = type),
+  $D03E a large one, $D000 sleeps (A ticks, X = where to resume), $D00A
+  ends the current one, $D015 kills process X. The dispatcher ($E84D)
+  counts each block's +4 down and jumps to +2 at zero.
+- **Objects**: drawn objects on the list at $A065 (shots and bombs on
+  $A06D; $A06B (likely) the ones off screen), free blocks in `<$67`. A
+  block is +0 link, +2 picture descriptor, +4 screen address where it was
+  drawn (0: not drawn), +A world x (16 bits; on screen when x - `<$20` <
+  $2580, column = (x - `<$20`) >> 6), +C y (8.8, kept in $2A-$F0), +E x
+  velocity, +10 y velocity (both added every frame by $E376), +14 flags.
+  +6, +8 and +12 are still to identify.
+- **Random numbers** ($D711): `<$DF` = 3 x `<$DF` + $11 + `<$E1` + `<$E0`
+  (with carry), after a 16-bit shift register in `<$E0-<$E1` steps once
+  (feedback bit 0 xor bit 3 of `<$E1`); returns `<$DF`. Called once per
+  main-loop tick and by the game's routines.
+- **State**: `<$BA` holds the game's mode bits (bit 5: objects not drawn,
+  bit 4: no ship, bit 6: no scrolling (likely), bit 1: no terrain (likely));
+  `<$20` is the screen's left edge in world x; the scanner's work area is
+  at $AF9D.
+
+### 2.3 Timing
 
 Found by comparing instruction traces (`mame_emu`):
 - A frame is 260 lines of 64 CPU cycles, starting at line 247; MAME's frame
@@ -171,7 +217,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
-| C0 | Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
+| C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |
 | C2 | Remaining enemies (mutants, bombers, pods and swarmers, baiters), wave flow, planet destruction, extra lives | Side-by-side test over several waves |
 | C3 | Attract mode, high scores and initials, operator pages, 2 players; sounds from the WAVs; the C game becomes the default | Full scripted run matches; release with `assets/` only |
