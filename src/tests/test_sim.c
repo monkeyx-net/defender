@@ -9,6 +9,11 @@
  *   - sounds.c: at every frame's step ($D568) the sequencer's state equals
  *     the C one's (started by every $D54D), and each sound it sends ($D539)
  *     is the one the C sequencer returned
+ *   - objects.c: the object pool and lists. Writes to them from code not
+ *     yet ported are copied to the C pool; the ported routines (set up
+ *     $D805, take $D0AD, set $D095, free $D0C7 / $D0F2, move $E376) run in
+ *     C when the ROM calls them, and after each the lists and every block
+ *     on them equal the board's RAM
  *   - laser.c: each laser process's head, middle and tail at every tick
  *     equal the C laser's, and every byte the C laser writes to the screen
  *     (and the colour pointer <$A4) is what the ROM wrote once it has drawn
@@ -23,6 +28,7 @@
 #include "assets/rom.h"
 #include "emu/board.h"
 #include "sim/laser.h"
+#include "sim/objects.h"
 #include "sim/rng.h"
 #include "sim/ship.h"
 #include "sim/sounds.h"
@@ -48,6 +54,18 @@
 #define LASER_ENDED 0xE69A
 #define VRAM 0xC000
 #define COLOURS_FILL 0xE69F
+#define OBJ_SETUP_POOL 0xD805
+#define OBJ_SETUP_POOL_END 0xD824
+#define OBJ_CREATE 0xD095   /* BSR $D0AD, then the inline words */
+#define OBJ_CREATE_SET 0xD099
+#define OBJ_CREATE_END 0xD0AC
+#define OBJ_ALLOC 0xD0AD
+#define OBJ_ALLOC_END 0xD0C6
+#define OBJ_FREE 0xD0C7
+#define OBJ_FREE_SHOT 0xD0F2
+#define OBJ_FREE_END 0xD0F8
+#define OBJ_MOVE 0xE376
+#define OBJ_MOVE_END 0xE39E
 #define SOUNDS_START 0xD54D
 #define SOUNDS_START_CLEARED 0xD551 /* <$AD cleared */
 #define SOUNDS_START_DONE 0xD566     /* the script stored (the interrupt masked from $D55D) */
@@ -62,6 +80,13 @@ static uint16_t pc; /* the instruction running */
 static Rng rng;
 static Ship ship;
 static int rng_sync = 1, ship_sync = 1, failures;
+static Objects objs;
+static int objs_valid; /* from the first $D805 on */
+/* ported routines running: compare when each returns (its return address and stack) */
+static struct { uint16_t ret, sp; } obj_calls[8];
+static int obj_depth;
+static long obj_inits, obj_allocs, obj_setups, obj_frees, obj_moves;
+static long obj_compares, obj_mirrored, obj_pauses;
 static uint8_t fixed_rom[0x10000]; /* $D000-$FFFF: the scripts the C sequencer reads */
 static Sounds sounds;
 static int sounds_sync = 1, sound_expected = -1, sound_in_tick, sound_sent;
@@ -238,6 +263,116 @@ static void laser_hook(Board *b)
     }
 }
 
+/* A byte as the main CPU sees it now (RAM, the bank at $C000, the fixed ROM). */
+static int peek(uint16_t a)
+{
+    if (a >= 0xD000) return fixed_rom[a];
+    if (a >= 0xC000) return board.bank ? rom_bank_byte(&rom, board.bank, a - 0xC000) : -1;
+    return board.ram[a];
+}
+
+static uint16_t peek16(uint16_t a) { return (uint16_t)(peek(a) << 8 | peek((uint16_t)(a + 1))); }
+
+static int obj_ported(uint16_t at)
+{
+    return (at >= OBJ_SETUP_POOL && at <= OBJ_SETUP_POOL_END) || (at >= OBJ_CREATE && at <= OBJ_FREE_END) ||
+           (at >= OBJ_MOVE && at <= OBJ_MOVE_END);
+}
+
+/* Compare one list, and every block on it, with the board's RAM. */
+static void obj_compare_list(uint16_t head_addr, const char *name)
+{
+    uint16_t a = word(head_addr);
+    int n = 0, fields = head_addr != LIST_FREE; /* free blocks: only their links matter */
+    if (objects_peek(&objs, head_addr) != *ram(head_addr) || objects_peek(&objs, head_addr + 1) != *ram(head_addr + 1)) {
+        if (failures++ < 5)
+            fprintf(stderr, "test_sim: frame %lld: list %s head %04X, C %02X%02X\n", (long long)board.frame, name, a,
+                    objects_peek(&objs, head_addr), objects_peek(&objs, head_addr + 1));
+        return;
+    }
+    while (a && n++ <= OBJECTS) {
+        if (!objects_at(&objs, a)) {
+            /* the attract mode's logo pieces are blocks outside the pool:
+               pause until the pool is next set up (a game's start) */
+            objs_valid = 0;
+            obj_pauses++;
+            return;
+        }
+        for (int i = 0; i < (fields ? OBJECT_SIZE : 2); i++) {
+            int want = *ram(a + i), got = objects_peek(&objs, (uint16_t)(a + i));
+            if (want != got) {
+                if (failures++ < 5)
+                    fprintf(stderr, "test_sim: frame %lld: %s object %04X +%02X = %02X, C %02X (after %04X)\n",
+                            (long long)board.frame, name, a, i, want, got & 0xFF, pc);
+                return;
+            }
+        }
+        a = word(a);
+    }
+}
+
+static void obj_compare(void)
+{
+    obj_compares++;
+    obj_compare_list(LIST_SCREEN, "screen");
+    if (objs_valid) obj_compare_list(LIST_OFF_SCREEN, "off-screen");
+    if (objs_valid) obj_compare_list(LIST_SHOTS, "shots");
+    if (objs_valid) obj_compare_list(LIST_FREE, "free");
+}
+
+static void obj_call(Board *b)
+{
+    if (obj_depth < (int)(sizeof obj_calls / sizeof obj_calls[0])) {
+        obj_calls[obj_depth].ret = peek16(b->cpu.s);
+        obj_calls[obj_depth].sp = (uint16_t)(b->cpu.s + 2);
+        obj_depth++;
+    }
+}
+
+static void objects_hook(Board *b)
+{
+    switch (pc) {
+    case OBJ_SETUP_POOL:
+        /* the blocks keep what they held: start from RAM the first time */
+        if (!objs_valid)
+            for (unsigned a = OBJECTS_FIRST; a < OBJECTS_FIRST + OBJECTS * OBJECT_SIZE; a++)
+                objects_poke(&objs, (uint16_t)a, *ram(a));
+        objects_init(&objs);
+        obj_inits++;
+        objs_valid = 1;
+        obj_call(b);
+        break;
+    case OBJ_ALLOC:
+        if (!objs_valid) break;
+        objects_alloc(&objs);
+        obj_allocs++;
+        obj_call(b);
+        break;
+    case OBJ_CREATE_SET: {
+        if (!objs_valid) break;
+        /* after PSHS U,Y,D: the return address (the inline words) at S+6 */
+        uint16_t in = peek16((uint16_t)(b->cpu.s + 6));
+        objects_setup(&objs, b->cpu.x, b->cpu.u, peek16(in), peek16((uint16_t)(in + 2)), peek16((uint16_t)(in + 4)));
+        obj_setups++;
+        break;
+    }
+    case OBJ_FREE:
+    case OBJ_FREE_SHOT:
+        if (!objs_valid) break;
+        if ((pc == OBJ_FREE ? objects_free(&objs, b->cpu.x) : objects_free_shot(&objs, b->cpu.x)) && failures++ < 5)
+            fprintf(stderr, "test_sim: frame %lld: C cannot free object %04X\n", (long long)b->frame, b->cpu.x);
+        obj_frees++;
+        obj_call(b);
+        break;
+    case OBJ_MOVE:
+        if (!objs_valid) break;
+        objects_move(&objs, *ram(0xA0BA));
+        obj_moves++;
+        obj_call(b);
+        break;
+    }
+}
+
 static uint16_t sounds_b0(void) { return (uint16_t)((sounds.script - fixed_rom) + sounds.pos); }
 
 static void sounds_hook(Board *b)
@@ -330,6 +465,14 @@ static void step_hook(Board *b)
         rng_sync = 0;
         rng_step(&rng);
     }
+    /* a ported object routine has returned: compare */
+    if (obj_depth && pc == obj_calls[obj_depth - 1].ret && b->cpu.s == obj_calls[obj_depth - 1].sp) {
+        obj_depth--;
+        if (objs_valid) obj_compare();
+    }
+    if (pc == OBJ_SETUP_POOL || pc == OBJ_ALLOC || pc == OBJ_CREATE_SET || pc == OBJ_FREE || pc == OBJ_FREE_SHOT ||
+        pc == OBJ_MOVE)
+        objects_hook(b);
     if (pc >= LASER_START_R && pc <= LASER_ENDED) laser_hook(b);
     if (pc == SOUNDS_START || pc == SOUNDS_START_CLEARED || pc == SOUNDS_START_DONE || pc == SOUNDS_TICK || pc == SOUNDS_SEND || pc == SOUNDS_TICK_DONE) sounds_hook(b);
     if (pc == COLOURS_FILL) {
@@ -367,11 +510,14 @@ static void step_hook(Board *b)
 static void write_hook(Board *b, uint16_t a, uint8_t v)
 {
     (void)b;
-    (void)v;
     if (a < VRAM && !(pc >= LASER_CODE_FIRST && pc <= LASER_CODE_LAST)) overdrawn[a] = 1;
     if (a >= 0xA0DF && a <= 0xA0E1 && !(pc >= RNG_CALL && pc < RNG_END) && !rng_sync) {
         rng_sync = 1;
         rng_resyncs++;
+    }
+    if (objs_valid && objects_peek(&objs, a) >= 0 && !obj_ported(pc)) {
+        objects_poke(&objs, a, v);
+        obj_mirrored++;
     }
     if (((a >= 0xA0B0 && a <= 0xA0B4) || a == 0xA0AD) && !(pc >= SOUNDS_SEND && pc < SOUNDS_TICK_DONE) &&
         !sounds_sync) {
@@ -442,11 +588,15 @@ int main(int argc, char **argv)
            rng_checks, rng_resyncs, rng_nested, ship_checks, ship_resyncs);
     printf("test_sim: sounds: %ld frames, %ld scripts started, %ld sounds sent (%ld resyncs)\n", sound_ticks,
            sound_starts, sound_sends, sound_resyncs);
+    printf("test_sim: objects: %ld set-ups, %ld taken, %ld set, %ld freed, %ld moves; %ld comparisons, %ld writes\n"
+           "          from unported code copied, %ld pauses\n",
+           obj_inits, obj_allocs, obj_setups, obj_frees, obj_moves, obj_compares, obj_mirrored, obj_pauses);
     printf("test_sim: laser colour tables: %ld checked\n", colour_fills);
     printf("test_sim: lasers: %ld right, %ld left, %ld ticks, %ld ends, %ld screen bytes checked (%ld drawn over since)\n", laser_right, laser_left, laser_ticks,
            laser_ends, laser_bytes, laser_overdrawn);
     if (rng_checks < 1000 || ship_checks < 1000 || laser_ticks < 100 || laser_ends < 10 ||
-        sound_ticks < 1000 || sound_sends < 50) {
+        sound_ticks < 1000 || sound_sends < 50 || obj_compares < 1000 ||
+        obj_allocs < 50 || obj_frees < 10) {
         fprintf(stderr, "test_sim: too few checks\n");
         return 1;
     }

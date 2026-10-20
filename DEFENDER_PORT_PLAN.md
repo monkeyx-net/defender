@@ -140,9 +140,22 @@ is $A0 throughout, so `<$xx` is $A0xx.
   $D03E a large one, $D000 sleeps (A ticks, X = where to resume), $D00A
   ends the current one, $D015 kills process X. The dispatcher ($E84D)
   counts each block's +4 down and jumps to +2 at zero.
-- **Objects**: drawn objects on the list at $A065 (shots and bombs on
-  $A06D; $A06B (likely) the ones off screen), free blocks in `<$67`. A
-  block is +0 link, +2 picture descriptor, +4 screen address where it was
+- **Objects** (ported: `src/sim/objects.c`, checked by `sim`): 95 blocks
+  of 23 bytes at $A23C, set up by $D805 at a game's start (only the links:
+  blocks keep their old contents). Lists: $A065 on screen (drawn, moved,
+  hit tested), $A06B off screen, $A06D shots and bombs, free blocks in
+  `<$67`. $D0AD takes a free block and links it ahead of the screen list's
+  head without making it the head (the appearing effect $FC69 and others
+  do); $D095 does that and sets +6 owner (the calling process), +2 picture,
+  +8 hit handler and +12 from the three words after the call; $D0C7 frees
+  a block on the screen or off-screen list, $D0F2 a shot; $E376 moves the
+  screen list (y wraps between lines $2A and $F0). The attract mode's logo
+  pieces are blocks outside the pool ($B304 on). A killed enemy's handler
+  calls $F416 with two words after the call: the score ($D360) and the
+  sound script; it ends the owner process ($D013), frees the block, erases
+  it and starts the explosion ($FC63). Processes: 75 blocks of 15 bytes at
+  $AAC5 and 5 of 23 at $AF2A ($D7C6). The palette starts from the 16 bytes
+  at $F8BE ($D7F5). A block is +0 link, +2 picture descriptor, +4 screen address where it was
   drawn (0: not drawn), +A world x (16 bits; on screen when x - `<$20` <
   $2580, column = (x - `<$20`) >> 6), +C y (8.8, kept in $2A-$F0), +E x
   velocity, +10 y velocity (both added every frame by $E376), +14 flags.
@@ -267,8 +280,13 @@ Found by comparing instruction traces (`mame_emu`):
   from code not yet ported resynchronise it (counted). So far: the random
   generator (5000 calls), the ship (4400 frames) and the laser (65
   lasers, 1700 ticks, 16000 screen bytes; bytes the interrupt draws over
-  between the laser's write and the check are skipped and counted) and the
-  sound sequencer (4400 frames, 97 scripts, 125 sounds sent). The board
+  between the laser's write and the check are skipped and counted) the
+  sound sequencer (4400 frames, 97 scripts, 125 sounds sent) and the
+  objects (67 taken, 15 freed, 4264 moves; writes to the pool from code
+  not yet ported are copied to the C pool, ported routines run in C, and
+  after each returns every list and live block is compared; paused while
+  the attract mode's logo blocks are on a list). Not covered yet: an
+  object's y wrapping (no object crosses in the scripted minute). The board
   calls the step hook also before an instruction the CPU then puts off for
   an interrupt; `sim` ignores those calls (IRQ or FIRQ pending and not
   masked). Where an interrupt can run in the middle of a routine, the
@@ -293,7 +311,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E2 | Polish: pad play-testing (thrust and reverse placement; an option to thrust in the stick's direction needs the ship's facing from RAM), settings persistence, web build with IndexedDB CMOS, cocktail flip, device testing | Device checklist |
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
-| S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte), the sound sequencer (`sounds.c`, $D539-$D5A6) | `sim` |
+| S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte), the sound sequencer (`sounds.c`, $D539-$D5A6), the object pool and lists (`objects.c`) | `sim` |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |

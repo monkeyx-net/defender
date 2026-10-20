@@ -76,7 +76,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
 - `sim/` - the game in C, piece by piece (plan decision 6): `rng.c` (the
   random generator, $D711), `ship.c` (the ship's motion and scrolling,
   $E263), `laser.c` (the laser, drawn into arcade-layout video RAM),
-  `sounds.c` (the sound sequencer: scripts, thrust sound);
+  `sounds.c` (the sound sequencer: scripts, thrust sound), `objects.c`
+  (the object pool and lists, in the ROM's layout and values);
   each mirrors a ROM routine's arithmetic exactly
 - `gfx/` - draws into the framebuffer in arcade coordinates (`fb.scale` > 1 for
   HD): `fb.c`, `blit.c`, `scale.c` (Scale2x/3x, xBR), `enhance.c` (graphics
@@ -115,7 +116,10 @@ Every change keeps `ctest` green.
   without a ROM set
 - `sim` - label `rom`: plays a scripted game on the emulated board and
   checks each `sim/` routine against the ROM's at every call: state, and
-  the screen bytes it writes (writes from
+  the screen bytes it writes. For shared state (the object pool) writes
+  from unported code are copied to the C model and ported routines run in
+  C; compare when the routine returns (return address and stack pointer),
+  not when the PC leaves it (an interrupt). Otherwise (writes from
   code not yet ported resynchronise it; the board calls the step hook also
   before an instruction the CPU then puts off for an interrupt: ignore
   calls with an IRQ or FIRQ pending and unmasked)
