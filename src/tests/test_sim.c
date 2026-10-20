@@ -6,6 +6,10 @@
  *     which then steps
  *   - ship.c: at every call of $E263, the ship and scroll state equals the
  *     C model's, which then steps with the controls and facing in RAM
+ *   - laser.c: each laser process's head, middle and tail at every tick
+ *     equal the C laser's, and every byte the C laser writes to the screen
+ *     (and the colour pointer <$A4) is what the ROM wrote once it has drawn
+ *     or erased
  * Code not yet ported also writes this state (a new ship, hyperspace): such
  * writes resynchronise the model from RAM, and are counted.
  */
@@ -15,6 +19,7 @@
 
 #include "assets/rom.h"
 #include "emu/board.h"
+#include "sim/laser.h"
 #include "sim/rng.h"
 #include "sim/ship.h"
 
@@ -26,6 +31,20 @@
 #define SHIP_CALL 0xE263
 #define SHIP_END 0xE376
 #define BA_NO_SCROLL 0x40
+#define BA_FROZEN 0x40
+/* the laser process: start, tick, drawn, end and ended, right and left */
+#define LASER_START_R 0xE5C1
+#define LASER_START_L 0xE630
+#define LASER_TICK_R 0xE5CB
+#define LASER_TICK_L 0xE638
+#define LASER_DRAWN_R 0xE611
+#define LASER_DRAWN_L 0xE67E
+#define LASER_END_R 0xE621
+#define LASER_END_L 0xE68D
+#define LASER_ENDED 0xE69A
+#define VRAM 0xC000
+#define COLOURS_FILL 0xE69F
+#define COLOURS_FILLED 0xE6B9
 
 static RomSet rom;
 static Board board;
@@ -33,6 +52,27 @@ static uint16_t pc; /* the instruction running */
 static Rng rng;
 static Ship ship;
 static int rng_sync = 1, ship_sync = 1, failures;
+static long laser_ticks, laser_ends, laser_bytes, laser_left, laser_right, colour_fills;
+static LaserColours colours_want;
+static long colours_nested;
+static int colours_pending;
+
+/* One laser process, by its block (U), and what the C laser expects. */
+typedef struct {
+    uint16_t u;
+    int have;          /* `next` holds the C laser's state for the next tick */
+    Laser next;
+    Laser from;        /* the RAM state `next` was predicted from */
+    int from_valid;
+    uint16_t colours;  /* <$A4 expected once drawn */
+    int writes;        /* the expected bytes below are valid */
+} LaserCheck;
+static LaserCheck lasers[8];
+static uint8_t before[VRAM], after[VRAM];
+static uint8_t overdrawn[VRAM]; /* written since by other code (the interrupt drawing objects) */
+static long laser_overdrawn;
+#define LASER_CODE_FIRST 0xE591
+#define LASER_CODE_LAST 0xE69E
 static int rng_depth;
 static uint16_t rng_stack[8]; /* S at each call in progress */
 static long rng_checks, rng_resyncs, rng_nested, ship_checks, ship_resyncs;
@@ -72,6 +112,123 @@ static void report_ship(const Ship *want, const Ship *got)
             (uint16_t)want->vy, (uint16_t)got->vy);
 }
 
+static LaserCheck *laser_check(uint16_t u)
+{
+    LaserCheck *free_one = NULL;
+    for (int i = 0; i < 8; i++) {
+        if (lasers[i].u == u) return &lasers[i];
+        if (!lasers[i].u && !free_one) free_one = &lasers[i];
+    }
+    if (!free_one) {
+        fprintf(stderr, "test_sim: more than 8 lasers\n");
+        exit(1);
+    }
+    memset(free_one, 0, sizeof *free_one);
+    free_one->u = u;
+    return free_one;
+}
+
+static void laser_from_ram(Laser *l, uint16_t u, int left)
+{
+    l->head = word(u + 7);
+    l->mid = word(u + 9);
+    l->tail = word(u + 11);
+    l->left = left;
+}
+
+/* Run the C laser on a copy of RAM; `after` holds what it wrote. */
+static void laser_predict(LaserCheck *c, int left, int end)
+{
+    Laser l;
+    LaserColours colours;
+    laser_from_ram(&l, c->u, left);
+    colours.next = word(0xA0A4);
+    memcpy(colours.table, ram(LASER_COLOURS), sizeof colours.table);
+    memcpy(before, board.ram, sizeof before);
+    memcpy(after, board.ram, sizeof after);
+    memset(overdrawn, 0, sizeof overdrawn);
+    if (end) {
+        laser_end(&l, after);
+    } else if (laser_tick(&l, &colours, after, *ram(0xA0BA) & BA_FROZEN)) {
+        c->writes = 0; /* it ends instead: checked at the end */
+        return;
+    }
+    c->next = l;
+    c->have = !end;
+    c->colours = colours.next;
+    c->writes = 1;
+}
+
+static void laser_compare(LaserCheck *c, const char *what)
+{
+    if (!c->writes) return;
+    for (unsigned a = 0; a < VRAM; a++) {
+        if (after[a] == before[a]) continue;
+        if (overdrawn[a]) {
+            laser_overdrawn++;
+            continue;
+        }
+        laser_bytes++;
+        if (board.ram[a] != after[a] && failures++ < 5)
+            fprintf(stderr, "test_sim: frame %lld: laser %04X %s: $%04X = %02X, C %02X\n", (long long)board.frame,
+                    c->u, what, a, board.ram[a], after[a]);
+    }
+    if (strcmp(what, "end") && word(0xA0A4) != c->colours && failures++ < 5)
+        fprintf(stderr, "test_sim: frame %lld: laser colour pointer %04X, C %04X\n", (long long)board.frame,
+                word(0xA0A4), c->colours);
+    c->writes = 0;
+}
+
+static void laser_hook(Board *b)
+{
+    uint16_t u = b->cpu.u;
+    switch (pc) {
+    case LASER_START_R:
+    case LASER_START_L: {
+        LaserCheck *c = laser_check(u);
+        if (pc == LASER_START_L) laser_left++;
+        else laser_right++;
+        laser_start(&c->next, (uint16_t)b->cpu.x, pc == LASER_START_L);
+        c->have = 1;
+        break;
+    }
+    case LASER_TICK_R:
+    case LASER_TICK_L: {
+        LaserCheck *c = laser_check(u);
+        Laser now;
+        laser_from_ram(&now, u, pc == LASER_TICK_L);
+        /* the hook again, after an interrupt put the instruction off */
+        if (c->from_valid && now.head == c->from.head && now.mid == c->from.mid && now.tail == c->from.tail) break;
+        if (c->have) {
+            laser_ticks++;
+            if ((now.head != c->next.head || now.mid != c->next.mid || now.tail != c->next.tail) && failures++ < 5)
+                fprintf(stderr, "test_sim: frame %lld: laser %04X head/mid/tail %04X %04X %04X, C %04X %04X %04X\n",
+                        (long long)b->frame, u, now.head, now.mid, now.tail, c->next.head, c->next.mid,
+                        c->next.tail);
+        }
+        laser_predict(c, pc == LASER_TICK_L, 0);
+        c->from = now;
+        c->from_valid = 1;
+        break;
+    }
+    case LASER_DRAWN_R:
+    case LASER_DRAWN_L:
+        laser_compare(laser_check(u), "tick");
+        break;
+    case LASER_END_R:
+    case LASER_END_L:
+        laser_predict(laser_check(u), pc == LASER_END_L, 1);
+        break;
+    case LASER_ENDED: {
+        LaserCheck *c = laser_check(u);
+        if (c->writes) laser_ends++;
+        laser_compare(c, "end");
+        c->u = 0; /* the block may be reused */
+        break;
+    }
+    }
+}
+
 static void step_hook(Board *b)
 {
     pc = b->cpu.pc;
@@ -104,6 +261,23 @@ static void step_hook(Board *b)
         rng_sync = 0;
         rng_step(&rng);
     }
+    if (pc >= LASER_START_R && pc <= LASER_ENDED) laser_hook(b);
+    if (pc == COLOURS_FILL) {
+        Rng r = { *ram(0xA0DF), *ram(0xA0E0), *ram(0xA0E1) };
+        laser_colours_fill(&colours_want, &r);
+        colours_nested = rng_nested;
+        colours_pending = 1;
+    }
+    if (pc == COLOURS_FILLED && colours_pending) {
+        colours_pending = 0;
+        /* an interrupt's call of the generator in between changes the draws */
+        if (rng_nested == colours_nested) {
+            colour_fills++;
+            if ((memcmp(ram(LASER_COLOURS), colours_want.table, LASER_COLOURS_SIZE) ||
+                 word(0xA0A4) != colours_want.next) && failures++ < 5)
+                fprintf(stderr, "test_sim: frame %lld: laser colour table differs\n", (long long)b->frame);
+        }
+    }
     if (pc == SHIP_CALL) {
         Ship now;
         ship_from_ram(&now);
@@ -124,6 +298,7 @@ static void write_hook(Board *b, uint16_t a, uint8_t v)
 {
     (void)b;
     (void)v;
+    if (a < VRAM && !(pc >= LASER_CODE_FIRST && pc <= LASER_CODE_LAST)) overdrawn[a] = 1;
     if (a >= 0xA0DF && a <= 0xA0E1 && !(pc >= RNG_CALL && pc < RNG_END) && !rng_sync) {
         rng_sync = 1;
         rng_resyncs++;
@@ -136,7 +311,8 @@ static void write_hook(Board *b, uint16_t a, uint8_t v)
     }
 }
 
-/* Coin and start, then each control in turn (as src/tests/mame/script.cmake). */
+/* Coin and start, then each control in turn (as src/tests/mame/script.cmake,
+   but fire is pressed afresh every 8 frames, so there are many lasers). */
 static void controls(long f, uint8_t *in0, uint8_t *in1, uint8_t *in2)
 {
     static const struct { uint8_t in0, in1; int hold; } moves[] = {
@@ -155,6 +331,7 @@ static void controls(long f, uint8_t *in0, uint8_t *in1, uint8_t *in2)
         int hold = moves[m].hold ? moves[m].hold : 20 + (k * 7) % 25;
         if (f < start + hold) {
             *in0 = moves[m].in0;
+            if (f % 8 >= 4) *in0 &= (uint8_t)~IN0_FIRE;
             *in1 = moves[m].in1;
             return;
         }
@@ -187,7 +364,10 @@ int main(int argc, char **argv)
     }
     printf("test_sim: random %ld calls checked (%ld resyncs, %ld nested), ship %ld frames checked (%ld resyncs)\n",
            rng_checks, rng_resyncs, rng_nested, ship_checks, ship_resyncs);
-    if (rng_checks < 1000 || ship_checks < 1000) {
+    printf("test_sim: laser colour tables: %ld checked\n", colour_fills);
+    printf("test_sim: lasers: %ld right, %ld left, %ld ticks, %ld ends, %ld screen bytes checked (%ld drawn over since)\n", laser_right, laser_left, laser_ticks,
+           laser_ends, laser_bytes, laser_overdrawn);
+    if (rng_checks < 1000 || ship_checks < 1000 || laser_ticks < 100 || laser_ends < 10) {
         fprintf(stderr, "test_sim: too few checks\n");
         return 1;
     }

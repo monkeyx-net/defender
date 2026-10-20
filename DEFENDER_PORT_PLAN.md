@@ -146,7 +146,7 @@ is $A0 throughout, so `<$xx` is $A0xx.
   drawn (0: not drawn), +A world x (16 bits; on screen when x - `<$20` <
   $2580, column = (x - `<$20`) >> 6), +C y (8.8, kept in $2A-$F0), +E x
   velocity, +10 y velocity (both added every frame by $E376), +14 flags.
-  +6, +8 and +12 are still to identify.
+  +8 is the hit handler ($E6BA); +6 and +12 are still to identify.
 - **Random numbers** ($D711): `<$DF` = 3 x `<$DF` + $11 + `<$E1` + `<$E0`
   (with carry), after a 16-bit shift register in `<$E0-<$E1` steps once
   (feedback bit 0 xor bit 3 of `<$E1`); returns `<$DF`. Called once per
@@ -170,6 +170,23 @@ is $A0 throughout, so `<$xx` is $A0xx.
   a frame) and adds ∓8 a frame to ∓$200, within lines $2B-$EE of `<$C5`
   (8.8). New ship ($D980): `<$BD` = `<$BB` = $0300, screen x $2000, y
   $8000, at rest.
+- **Laser** (ported: `src/sim/laser.c`, checked by `sim`): fire starts
+  process $E591 unless 4 are out (`<$B5`); sound $D51B. It lives on the
+  screen, not in the world: from the ship's screen position (`<$C1-<$C2`)
+  +$0704 facing right (+$0004 left), each tick ($E5CB right, $E638 left)
+  the head writes $11 to 4 columns and a $99 tip (8 pixels a tick, ending
+  at column $98 or $05), the 3 bytes behind the previous head take colours
+  from the table at $A142 (pointer `<$A4`, wrapping at $A15F; filled by
+  $E69F with random bytes of palette index 0 or 1 per nibble: index 1
+  cycles), and the tail clears a byte a tick. Then the hit test: the 8 x 1
+  line $F96F at the head (6 columns back facing right) against the objects
+  ($E5AB → $E6BA). A hit, the edge or `<$BA` bit 6 erases it tail to head.
+- **Hit test** ($E6BA; D = a screen position, U = a picture descriptor,
+  X = the list, $A065 by default): bounding boxes against each drawn
+  object (its +4 screen position and its picture's size), then the two
+  pictures' even data byte by byte; on a hit it leaves the screen address
+  in `<$F8`, calls the object's +8 routine (its hit handler) and returns
+  A = 1. The ship's collisions ($E861) use it too.
 - **Reverse** ($E897, once per press): `<$BB` = -`<$BD`; the ship turns
   (`<$BD` = `<$BB`) when it is next drawn ($E237); then it waits for the
   button's release and 5 more ticks (`<$AF` meanwhile).
@@ -228,7 +245,11 @@ Found by comparing instruction traces (`mame_emu`):
   emulated board and checks each ported routine at every call: the state
   the C version computed from the previous call equals the ROM's. Writes
   from code not yet ported resynchronise it (counted). So far: the random
-  generator (5000 calls) and the ship (4400 frames).
+  generator (5000 calls), the ship (4400 frames) and the laser (65
+  lasers, 1700 ticks, 16000 screen bytes; bytes the interrupt draws over
+  between the laser's write and the check are skipped and counted). The
+  hook also runs before an instruction the CPU puts off for an interrupt;
+  the checks recognise the repeat (same stack pointer, same state).
 - **To add with the C game** (as Robotron's 3.2): the C game and the
   emulated board run the same inputs side by side and their state (objects,
   score, wave, random numbers, sound commands) is compared every frame;
@@ -249,7 +270,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E2 | Polish: pad play-testing (thrust and reverse placement; an option to thrust in the stick's direction needs the ship's facing from RAM), settings persistence, web build with IndexedDB CMOS, cocktail flip, device testing | Device checklist |
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
-| S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711) and the ship's motion (`ship.c`, $E263) | `sim` |
+| S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte) | `sim` |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |

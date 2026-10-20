@@ -50,6 +50,7 @@ add_library(defender_core STATIC
   src/emu/sound.c
   src/sim/rng.c
   src/sim/ship.c
+  src/sim/laser.c
 )
 target_include_directories(defender_core PUBLIC src)
 target_link_libraries(defender_core PUBLIC m)
