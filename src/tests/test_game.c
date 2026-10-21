@@ -15,7 +15,9 @@
  * step an interrupt broke into may then differ (the interrupt can change
  * what the step reads): it must match RAM when the C step reads the state
  * from before the interrupt or from after it, and each byte both wrote
- * keeps the value of the later write in the ROM's order. Between steps the
+ * keeps the value of the later write in the ROM's order; or, for long
+ * steps (the scanner), when each interrupt's writes land in the C step
+ * after as many of its raw writes as the ROM's step had made. Between steps the
  * model must equal RAM at every frame (a check of the copying).
  */
 #include <stdio.h>
@@ -42,6 +44,15 @@ static struct { uint16_t addr; uint8_t value; } irq_writes[8192];
 static int irq_count;
 static uint32_t step_seq[STACK], irq_seq[STACK], seq; /* when each byte was last written */
 static uint16_t step_proc;
+/* where each interrupt fell in the step: the ROM step's raw writes before it, and its writes */
+static struct { long after; int first, count; } irqs[64];
+static int irq_n;
+static long step_raw_writes;
+
+static int raw_address(uint16_t a)
+{
+    return !(a >= 0xA05F && a < 0xA06F) && !(a >= OBJECTS_FIRST && a < LARGE_FIRST + LARGES * LARGE_SIZE);
+}
 static uint8_t predicted[GAME_RAM], has_prediction[GAME_RAM], written[GAME_RAM];
 static int step_active, step_interrupted, irq_depth, failures;
 static struct { uint16_t resume; long n; } by_resume[32];
@@ -94,6 +105,42 @@ static int merged_matches(uint16_t proc)
     return first_difference_of(&merged) < 0;
 }
 
+/* The C step with each interrupt's writes applied where it fell. */
+static long c_raw_writes;
+static int next_irq, replaying;
+
+static void replay_hook(void *user, uint16_t addr)
+{
+    Game *g = user;
+    if (replaying || !raw_address(addr)) return;
+    while (next_irq < irq_n && irqs[next_irq].after == c_raw_writes) {
+        replaying = 1;
+        for (int i = irqs[next_irq].first; i < irqs[next_irq].first + irqs[next_irq].count; i++)
+            game_poke(g, irq_writes[i].addr, irq_writes[i].value);
+        replaying = 0;
+        next_irq++;
+    }
+    c_raw_writes++;
+}
+
+static int matches_interleaved(uint16_t proc)
+{
+    if (irq_n == (int)(sizeof irqs / sizeof irqs[0])) return 0;
+    other = before;
+    other.on_write = replay_hook;
+    other.user = &other;
+    c_raw_writes = 0;
+    next_irq = 0;
+    StepResult r = game_step(&other, proc);
+    other.on_write = NULL;
+    while (next_irq < irq_n) { /* interrupts after the step's last write */
+        for (int i = irqs[next_irq].first; i < irqs[next_irq].first + irqs[next_irq].count; i++)
+            game_poke(&other, irq_writes[i].addr, irq_writes[i].value);
+        next_irq++;
+    }
+    return r == STEP_DONE && first_difference_of(&other) < 0;
+}
+
 /* An interrupted step: does it match with the interrupt's effect on what it read before or after? */
 static int matches_reordered(uint16_t proc)
 {
@@ -101,7 +148,8 @@ static int matches_reordered(uint16_t proc)
     reads = before;            /* the step read before the interrupt */
     if (merged_matches(proc)) return 1;
     apply_irq_writes(&reads);  /* or after it */
-    return merged_matches(proc);
+    if (merged_matches(proc)) return 1;
+    return matches_interleaved(proc); /* or where it fell */
 }
 
 /* The first address where the model differs from RAM, or -1. */
@@ -123,6 +171,8 @@ static void start_step(uint16_t proc)
     steps++;
     before = model;
     irq_count = 0;
+    irq_n = 0;
+    step_raw_writes = 0;
     memset(step_seq, 0, sizeof step_seq);
     memset(irq_seq, 0, sizeof irq_seq);
     seq = 0;
@@ -179,7 +229,15 @@ static void step_hook(Board *b)
     if ((b->cpu.irq && !(b->cpu.cc & CC_I)) || (b->cpu.firq && !(b->cpu.cc & CC_F))) return;
     if (b->cpu.last_interrupt) {
         irq_depth++;
-        if (step_active) step_interrupted = 1;
+        if (step_active) {
+            step_interrupted = 1;
+            if (irq_n < (int)(sizeof irqs / sizeof irqs[0])) {
+                irqs[irq_n].after = step_raw_writes;
+                irqs[irq_n].first = irq_count;
+                irqs[irq_n].count = 0;
+                irq_n++;
+            }
+        }
     }
     uint16_t pc = b->cpu.pc;
     if (pc == 0xF20B) handler_calls[0]++;
@@ -204,11 +262,13 @@ static void write_hook(Board *b, uint16_t a, uint8_t v)
             irq_writes[irq_count].addr = a;
             irq_writes[irq_count].value = v;
             irq_count++;
+            if (irq_n && irq_depth) irqs[irq_n - 1].count++;
         }
         return;
     }
     written[a] = 1;
     step_seq[a] = ++seq;
+    if (raw_address(a)) step_raw_writes++;
     if (has_prediction[a]) game_poke(&model, a, predicted[a]);
     /* else C did not write it: the model keeps its byte, and differs if the ROM's does */
 }

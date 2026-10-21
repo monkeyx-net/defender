@@ -86,7 +86,9 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   the bonuses),
   `explosions.c` (starting one, an object appearing), `wave.c` (the
   wave's process: arrivals, baiters, the ramp), `baiter.c` (baiters), `pods.c` (pods and
-  swarmers), `bombers.c` (bombers), `hit.c` (the hit test), `enemies.c` (hit
+  swarmers), `bombers.c` (bombers), `background.c` (the
+  processes running all game: colour cycles, list sorting, shots ageing,
+  the scanner), `hit.c` (the hit test), `enemies.c` (hit
   handlers, kills), `score.c` (scoring and the score digits); `laser.c`
   also runs the laser as a process step;
   each mirrors a ROM routine's arithmetic exactly
@@ -138,7 +140,7 @@ Every change keeps `ctest` green.
   scripted game (writes copied); ported process steps run in C and the
   model must equal RAM when the ROM's step yields (a step an interrupt
   broke into must match with the interrupt's writes all before or all
-  after it). The scratch byte `<$73` and the like are RAM
+  after it, or replayed where they fell among its raw writes). The scratch byte `<$73` and the like are RAM
   too: port the stores to them. The model's `data` is the fixed ROM with
   bank 2 (pictures, font) at $C000; `bank[]` holds banks 1, 2, 3 and 7
   for the tables the code reads with that bank selected.
@@ -173,7 +175,8 @@ Every change keeps `ctest` green.
   frames start at line 247, reset takes 4 cycles.
 - Probes that are not tests: `ram_probe.lua` (work RAM at chosen frames, with
   scripted input and cheat pokes), `dasm_probe.lua` (MAME's disassembly to
-  `build/re`; never commit it, nor traces). `capture_probe.lua` also takes
+  `build/re`, `DASM_EXTRA` for listings from a chosen start where data
+  misaligns a bank's; never commit it, nor traces). `capture_probe.lua` also takes
   `PROBE_CYCLE` (repeating input) and `PROBE_POKE` / `PROBE_POKE_FROM`.
 - MAME tests share `build/mame` (one at a time) and start each run from a
   fresh copy of the primed CMOS (`src/tests/mame/mame_common.cmake`); MAME

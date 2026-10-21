@@ -165,7 +165,8 @@ is $A0 throughout, so `<$xx` is $A0xx.
   drawn (0: not drawn), +A world x (16 bits; on screen when x - `<$20` <
   $2580, column = (x - `<$20`) >> 6), +C y (8.8, kept in $2A-$F0), +E x
   velocity, +10 y velocity (both added every frame by $E376), +14 flags.
-  +8 is the hit handler ($E6BA); +6 and +12 are still to identify.
+  +6 the owner process, +8 the hit handler ($E6BA), +12 the scanner
+  colours (a lander $4433, a mutant $CC33), +15/+16 a shot's life.
 - **Random numbers** ($D711): `<$DF` = 3 x `<$DF` + $11 + `<$E1` + `<$E0`
   (with carry), after a 16-bit shift register in `<$E0-<$E1` steps once
   (feedback bit 0 xor bit 3 of `<$E1`); returns `<$DF`. Called once per
@@ -305,6 +306,24 @@ is $A0 throughout, so `<$xx` is $A0xx.
   mine ($F3DC: a shot $F95B, +12 $E498, under 10 shots, lasting
   (`<$DF` & $1F) + 1). A bomber hit ($F41D): 250 points, script $D502,
   out of its group; the group's process ends with its last bomber.
+- **Background processes** (ported: `src/sim/background.c`), started with
+  the player's turn ($D9CD-$D9FA): $E782/$E784 palette entry 1 (`<$27`,
+  the laser) through the zero-ended table at $E799 every 2 ticks; $E9BF
+  steps `<$9F` ($A162-$A182) and `<$A8` ($A1A2-$A1BA) every 4; $F43D /
+  $F44A palette 13-15 from $F45B-$F463 every 6; $F464 / $F472 palette 10
+  and 12 white and black for 3 ticks, then a random $E799 colour for 6,
+  `<$A6` swapping $CCB0 / $CCBC; $F493 / $F4B0 the score blinking until the
+  first points (`<$8A`); $E9E3 / $E9EE / $E9FC (2, 2, 4 ticks) the list
+  sorting ($EA33: off-screen objects move 8 frames' worth and join the
+  screen list within $3E80 of scroll - $0C80; $EA0A: the others leave it),
+  shots ageing ($E56A: +15 counts down while +16 is set; then freed,
+  erased, `<$99` - 1) and the scanner (bank 1 $CCAD: last drawing's dots
+  listed from $B05D to [`<$97`] and the ship's marker cleared; 64 terrain
+  columns $30-$6F from bank 1's table at $CD69, 3 bytes each, from
+  (scroll - $6D40) >> 10, not while `<$BA` bit 1; the corners; every
+  object's +12, its scanner colours, at ((x - (scroll - $6D40)) >> 10,
+  line >> 3) + $3007; the ship $9099 at (`<$BF` >> 4, `<$C0` >> 3) +
+  $4B07).
 - **Enemy shots** (ported: `src/sim/shots.c`): $E3F3 takes a free block
   for a shot from an object on screen below line $2A, at most 20 (`<$99`),
   in screen coordinates (+A column.line, +C line.column), +15 = +16 = $14,
@@ -456,7 +475,10 @@ Found by comparing instruction traces (`mame_emu`):
   Steps an interrupt broke into may differ (it can change what the step
   reads): it must match with the interrupt's writes all before or all
   after the C step: the C step reads the state from before or from after
-  the interrupt, and each byte keeps the later write in the ROM's order.
+  the interrupt, and each byte keeps the later write in the ROM's order;
+  or (long steps such as the scanner) each interrupt's writes land in a
+  rerun of the C step after as many of its raw writes as the ROM's step
+  had made (`Game.on_write`).
   The scripted minute: all 3611 steps match (9 interrupted); `game_hunter`
   (rapid fire, sweeping, 12000 frames): all 12850 (19 interrupted, 3 on
   paths not ported: a humanoid landing safely). Not reached yet: a lander
@@ -498,7 +520,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
 | S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte), the sound sequencer (`sounds.c`, $D539-$D5A6), the object pool and lists (`objects.c`), the process pool and dispatcher's bookkeeping (`processes.c`) | `sim` |
-| S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): the wave's process and arrivals (`wave.c`), landers and mutants with their arrival (`lander.c`), baiters (`baiter.c`), pods and swarmers (`pods.c`), bombers (`bombers.c`), enemy shots (`shots.c`), humanoids walking, dying, falling, landing, carried by the ship, their bonuses (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`) | `game`, `game_hunter`, `routines` |
+| S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): the background processes and the scanner (`background.c`), the wave's process and arrivals (`wave.c`), landers and mutants with their arrival (`lander.c`), baiters (`baiter.c`), pods and swarmers (`pods.c`), bombers (`bombers.c`), enemy shots (`shots.c`), humanoids walking, dying, falling, landing, carried by the ship, their bonuses (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`) | `game`, `game_hunter`, `routines` |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |

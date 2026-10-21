@@ -66,6 +66,7 @@ add_library(defender_core STATIC
   src/sim/wave.c
   src/sim/pods.c
   src/sim/bombers.c
+  src/sim/background.c
 )
 target_include_directories(defender_core PUBLIC src)
 target_link_libraries(defender_core PUBLIC m)

@@ -27,6 +27,9 @@ typedef struct {
     const uint8_t *data;    /* 64 KB, indexed by ROM address: the fixed ROM, bank 2 at $C000 */
     const uint8_t *bank[8]; /* 4 KB each at $C000 (banks 1, 2, 3, 7), for the tables in them */
     int sound_sent;         /* the last sound sent to the board ($D539), -1 for none */
+    /* optional, for tests: called before each raw byte write (not the typed pools' fields) */
+    void (*on_write)(void *user, uint16_t addr);
+    void *user;
 } Game;
 
 /* A byte as the main CPU reads it: RAM below $C000, `data` above. */

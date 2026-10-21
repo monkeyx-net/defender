@@ -1,5 +1,6 @@
 #include "sim/game.h"
 
+#include "sim/background.h"
 #include "sim/baiter.h"
 #include "sim/bombers.h"
 #include "sim/humanoids.h"
@@ -37,6 +38,7 @@ int game_peek(const Game *g, uint16_t addr)
 
 void game_poke(Game *g, uint16_t addr, uint8_t value)
 {
+    if (g->on_write) g->on_write(g->user, addr);
     if (objects_peek(&g->objects, addr) >= 0) objects_poke(&g->objects, addr, value);
     else if (processes_peek(&g->processes, addr) >= 0) processes_poke(&g->processes, addr, value);
     else if (addr < GAME_RAM) g->ram[addr] = value;
@@ -135,7 +137,19 @@ int game_step_ported(const Game *g, uint16_t proc)
     case SWARMER_AIM:
     case SWARMER:
     case BOMBERS:
-    case WAVE: return 1;
+    case WAVE:
+    case COLOUR_CYCLE:
+    case COLOUR_CYCLE_NEXT:
+    case POINTERS:
+    case PALETTE_CYCLE:
+    case PALETTE_CYCLE_NEXT:
+    case FLASH:
+    case FLASH_NEXT:
+    case SCORE_BLINK:
+    case SCORE_BLINK_DRAW:
+    case HOUSEKEEPING:
+    case HOUSEKEEPING_2:
+    case HOUSEKEEPING_3: return 1;
     }
     return 0;
 }
@@ -161,6 +175,18 @@ StepResult game_step(Game *g, uint16_t proc)
     case SWARMER_AIM: return swarmer_step(g, proc, 1);
     case SWARMER: return swarmer_step(g, proc, 0);
     case BOMBERS: return bomber_step(g, proc);
+    case COLOUR_CYCLE:
+    case COLOUR_CYCLE_NEXT:
+    case POINTERS:
+    case PALETTE_CYCLE:
+    case PALETTE_CYCLE_NEXT:
+    case FLASH:
+    case FLASH_NEXT:
+    case SCORE_BLINK:
+    case SCORE_BLINK_DRAW:
+    case HOUSEKEEPING:
+    case HOUSEKEEPING_2:
+    case HOUSEKEEPING_3: return background_step(g, proc, p->resume);
     case WAVE: return wave_step(g, proc);
     case LASER_TICK_RIGHT:
     case LASER_TICK_LEFT: return laser_step(g, proc, p->resume == LASER_TICK_LEFT);
