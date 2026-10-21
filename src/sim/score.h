@@ -23,5 +23,7 @@ uint16_t score_player(const Game *g);
 int score_add(Game *g, uint16_t points);
 /* $D3D9: draw the current player's score (6 digits, leading zeros blank). */
 void score_draw(Game *g);
+/* $D3DB: draw player `player`'s score. */
+void score_draw_player(Game *g, uint8_t player);
 
 #endif

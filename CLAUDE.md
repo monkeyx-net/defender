@@ -91,7 +91,10 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   the scanner), `player.c` (the ship's collisions, smart bomb, reverse,
   HUD icons, saving a wave), `irq.c` (the interrupt's drawing: objects, ship, stars, shots),
   `terrain.c` (bank 7's terrain: heights, buffers, drawing), `frame.c`
-  (a frame: the interrupt's halves, the main loop's tick, the controls), `hit.c` (the hit test), `enemies.c` (hit
+  (a frame: the interrupt's halves, the main loop's tick, the controls),
+  `cmos.c` (CMOS, bookkeeping, coins and credits), `flow.c` (coins and
+  the start buttons' processes, a start, a player's wave set-up, the HUD,
+  screen clears), `hit.c` (the hit test), `enemies.c` (hit
   handlers, kills), `score.c` (scoring and the score digits); `laser.c`
   also runs the laser as a process step;
   each mirrors a ROM routine's arithmetic exactly

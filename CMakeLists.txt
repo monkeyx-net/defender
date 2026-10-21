@@ -71,6 +71,8 @@ add_library(defender_core STATIC
   src/sim/irq.c
   src/sim/terrain.c
   src/sim/frame.c
+  src/sim/cmos.c
+  src/sim/flow.c
 )
 target_include_directories(defender_core PUBLIC src)
 target_link_libraries(defender_core PUBLIC m)

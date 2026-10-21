@@ -376,6 +376,43 @@ is $A0 throughout, so `<$xx` is $A0xx.
   index from the address. They keep S at `<$77-<$78` (not modelled).
   `routines` checks every picture's draw (both parities) and erase at
   every line.
+- **CMOS, coins and credits** (ported: `src/sim/cmos.c`). CMOS ($C400-
+  $C4FF) holds nibbles (the board reads them | $F0); $F822 reads a byte
+  from two (the first the high), $F838 two bytes from four, $F84E / $F864
+  write them, with bank 0 selected and restored. Settings read so far:
+  [$C481]-[$C483] the first extra ship's score, [$C485] ships, [$C487 +
+  2n] the units for a coin in slot n, [$C48F] units per credit, [$C491]
+  units per bonus credit, [$C493] the units before credits count, [$C495]
+  free play (1), [$C497] / [$C499] the ramp's start and limit, [$C49D]
+  waves between humanoid restores; [$C47D] the credits. Bank 3 $CBE0 /
+  $CBE6 add 1 / A (BCD) to bookkeeping counter B at $C3FD + 4B (1-3 coins
+  per slot, 4 credits paid, 5 extra ships, 6 minutes, 7 games); $CC0D
+  adds credits to `<$37` (BCD, at most 99) and saves them; $CC2C / $CC26
+  / $CC20 a coin in slot 1 / 2 / 3: counted, its units added to `<$38` and
+  `<$39`, and from [$C493] units on credits `<$38` / [$C48F] (the rest
+  kept) plus bonus `<$39` / [$C491] (which clear both), counted (4) and
+  added. The coin processes ($D46E slot 1, $D47C slot 2, $D475 slot 3; the
+  switch table at $F8A2 also has $D44C the Advance and $D43D the
+  high-score reset): not while `<$7E` (slam) or their debounce timer
+  (`<$7F`, `<$81`, `<$80`) runs; the timer set to $16, 10 ticks ($D499),
+  script $D4AB, bank 3's routine.
+- **Starting a game** (ported: `src/sim/flow.c`): $D839 / $D84E, in the
+  attract mode (`<$BA` negative) with 1 / 2 credits (free play gives 2;
+  $D82B): script $D4BD and $D861 / $D861, script $D4C2, $D861. $D861 (not
+  while `<$B7` is 0): `<$38` cleared; the first start ends every other
+  process ($D07C: not the current one nor type 2), clears the screen
+  ($F5D1: $0000-$9BFF), `<$BA` = $7F, player 1 up (`<$8B`), `<$25` = 1,
+  both player blocks cleared, ships [$C485] & $0F (+7) and as many smart
+  bombs (+9), 10 humanoids (+A), the first wave ($DE7C), the next extra
+  ship (+4..+5 and `<$AB-<$AC` from [$C481]/[$C483]), the block copied to
+  player 2 ($A1FF) and the turn's process $D919 started; every start
+  counts a player (`<$8C`), takes a credit (saved) and, the second,
+  redraws the HUD ($D665: the scanner's area $40 x $20 at $3008 cleared,
+  the frame $D6BC, ships, smart bombs, each score). $DE7C, a player's
+  next wave: +8 + 1; every [$C49D] waves +A = 10; bank 7's settings column
+  for waves 1-4 (+3) into +B..; then the ramp's column 3 (wave - 4 +
+  [$C497]) times, at most [$C499] (both BCD), on the current player's
+  block. $F5F1 clears the playfield only (lines $2A-$FF).
 - **The frame** (ported: `src/sim/frame.c`). The interrupt comes at lines
   0, 64, 128 and 192 (a few lines late while interrupts are masked); the
   handler ($DF17) works at the first with the beam at or past $80 (`<$92`
@@ -631,7 +668,9 @@ Found by comparing instruction traces (`mame_emu`):
   hit handler on them (about 5600); the ship's collisions among enemies,
   humanoids (falling, caught) and shots (3000; with bank 2 selected, as
   the main loop does); the explosions' tick on real explosions and
-  arrivals at random sizes, pictures and scrolls (3000). The C model reads
+  arrivals at random sizes, pictures and scrolls (3000); coins, a
+  player's wave set-up and starts with random operator settings, CMOS
+  compared too (about 1000 each). The C model reads
   banks 1, 2, 3 and 7 for their tables (`Game.bank`).
 - **To add with the C game** (as Robotron's 3.2): the C game and the
   emulated board run the same inputs side by side and their state (objects,

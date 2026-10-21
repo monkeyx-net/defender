@@ -5,6 +5,7 @@
 #include "sim/background.h"
 #include "sim/baiter.h"
 #include "sim/bombers.h"
+#include "sim/flow.h"
 #include "sim/humanoids.h"
 #include "sim/lander.h"
 #include "sim/laser.h"
@@ -18,6 +19,8 @@
 #define SOUND_SCRIPT 0xA0B0
 #define SOUND_PRIORITY 0xA0B2
 #define SOUND_THRUST 0xA0AD
+
+void game_load_cmos(Game *g, const uint8_t *cmos) { memcpy(g->cmos, cmos, sizeof g->cmos); }
 
 void game_load(Game *g, const uint8_t *ram)
 {
@@ -195,7 +198,13 @@ int game_step_ported(const Game *g, uint16_t proc)
     case SMART_BOMB_DONE:
     case REVERSE:
     case REVERSE_HELD:
-    case REVERSE_DONE: return 1;
+    case REVERSE_DONE:
+    case COIN_1:
+    case COIN_2:
+    case COIN_3:
+    case COIN_WAIT:
+    case START_1:
+    case START_2: return 1;
     }
     return 0;
 }
@@ -244,6 +253,12 @@ StepResult game_step(Game *g, uint16_t proc)
     case REVERSE:
     case REVERSE_HELD:
     case REVERSE_DONE: return player_step(g, proc, p->resume);
+    case COIN_1:
+    case COIN_2:
+    case COIN_3:
+    case COIN_WAIT:
+    case START_1:
+    case START_2: return flow_step(g, proc, p->resume);
     case WAVE: return wave_step(g, proc);
     case LASER_TICK_RIGHT:
     case LASER_TICK_LEFT: return laser_step(g, proc, p->resume == LASER_TICK_LEFT);

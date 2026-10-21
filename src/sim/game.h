@@ -31,6 +31,7 @@ typedef struct {
        ($CC00) and the coin PIA's control register A ($CC01: bit 6, CA2) */
     uint8_t in0, in1, in2, cra;
     uint8_t palette[16];    /* the hardware palette ($C000-$C00F), copied at the frame's top */
+    uint8_t cmos[256];      /* $C400-$C4FF: nibbles, | $F0 as the board keeps them */
     uint16_t resume_from;   /* where the dispatcher carries on after a step */
     /* the bottom half's band split: the ROM re-reads the beam after the
        sounds, the ship's motion and the stars (so it depends on their
@@ -47,6 +48,8 @@ typedef struct {
     void *user;
 } Game;
 
+/* CMOS from the board's 256 nibbles. */
+void game_load_cmos(Game *g, const uint8_t *cmos);
 /* The whole state from a RAM image of $0000-$BFFF. */
 void game_load(Game *g, const uint8_t *ram);
 /* A byte as the main CPU reads it: RAM below $C000, `data` above. */

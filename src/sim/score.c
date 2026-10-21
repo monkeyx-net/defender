@@ -42,10 +42,12 @@ static void clear_glyph(Game *g, uint16_t desc, uint16_t at)
         for (int r = 0; r < h; r++) game_poke(g, (uint16_t)(at + c * 0x100 + r), 0);
 }
 
-void score_draw(Game *g)
+void score_draw(Game *g) { score_draw_player(g, g->ram[PLAYER]); }
+
+void score_draw_player(Game *g, uint8_t player)
 {
-    uint16_t at = g->ram[PLAYER] == 1 ? 0x0F1C : 0x711C;
-    uint16_t digits = (uint16_t)(score_player(g) + 1);
+    uint16_t at = player == 1 ? 0x0F1C : 0x711C;
+    uint16_t digits = (uint16_t)((player == 1 ? PLAYER_ONE : PLAYER_TWO) + 1);
     uint16_t zero = (uint16_t)(g->data[DIGITS] << 8 | g->data[DIGITS + 1]);
     uint8_t bank = g->ram[BANK];
     g->ram[BANK] = 2;

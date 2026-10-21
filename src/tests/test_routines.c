@@ -32,6 +32,9 @@
  *   - the explosions' and appearances' tick ($FD2D, drawing by $FDEF) on
  *     slots made by real explosions and arrivals, at random sizes and
  *     scrolls
+ *   - coins (bank 3 $CC2C / $CC26 / $CC20), a player's wave set-up ($DE7C)
+ *     and a start ($D861) with random operator settings in CMOS (CMOS
+ *     compared too)
  *   - score_add ($D360): random scores (BCD, a third of them small), points (BCD words, the pair
  *     and digit bits), players and extra-life intervals; cases that earn an
  *     extra life (not ported) are counted and skipped
@@ -46,7 +49,9 @@
 #include "sim/baiter.h"
 #include "sim/bombers.h"
 #include "sim/enemies.h"
+#include "sim/cmos.h"
 #include "sim/explosions.h"
+#include "sim/flow.h"
 #include "sim/lander.h"
 #include "sim/player.h"
 #include "sim/pods.h"
@@ -112,10 +117,18 @@ static int rom_call(uint16_t pc, uint16_t d)
 static void load_model(void)
 {
     for (unsigned a = 0; a < STACK; a++) game_poke(&model, (uint16_t)a, board.ram[a]);
+    game_load_cmos(&model, board.cmos);
 }
 
 static long compare(const char *what, long n)
 {
+    for (int i = 0; i < 256; i++)
+        if (model.cmos[i] != board.cmos[i]) {
+            if (failures++ < 8)
+                fprintf(stderr, "test_routines: %s case %ld: CMOS $%04X = %02X, C %02X\n", what, n, 0xC400 + i,
+                        board.cmos[i], model.cmos[i]);
+            return 0xC400 + i;
+        }
     if (getenv("DBG_ALL")) {
         int k = 0;
         for (unsigned a = 0; a < STACK && k < 40; a++)
@@ -142,6 +155,7 @@ static uint8_t game_ram[0xC000]; /* the board's RAM in a game, restored before e
 /* Copy the model to the board's RAM. */
 static void store_model(void)
 {
+    memcpy(board.cmos, model.cmos, sizeof board.cmos);
     for (unsigned a = 0; a < STACK; a++) board.ram[a] = (uint8_t)game_peek(&model, (uint16_t)a);
 }
 
@@ -755,6 +769,74 @@ static void test_explosions(int cases)
     printf("test_routines: explosions' ticks: %ld equal the ROM's\n", done);
 }
 
+static int coin_slot;
+static uint16_t setup_block;
+static void c_coin(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)x; (void)y; coin_inserted(&model, coin_slot); }
+static void c_wave_setup(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)y; wave_setup(&model, x); }
+static void c_start(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)x; (void)y; game_start(&model); }
+
+/* A random BCD byte up to n (decimal). */
+static uint8_t bcd_upto(int n)
+{
+    int v = (int)rnd((unsigned)n + 1);
+    return (uint8_t)((v / 10) << 4 | (v % 10));
+}
+
+static void test_flow(int cases)
+{
+    long done[2] = { 0, 0 };
+    for (int n = 0; n < cases; n++) {
+        memcpy(board.ram, game_ram, sizeof game_ram);
+        load_model();
+        if (rnd(2)) {
+            /* a coin: units per slot, per credit, for a bonus, the minimum */
+            for (int s = 1; s <= 3; s++) cmos_write(&model, (uint16_t)(0xC487 + 2 * s), bcd_upto(9));
+            cmos_write(&model, 0xC48F, bcd_upto(9));
+            cmos_write(&model, 0xC491, bcd_upto(9));
+            cmos_write(&model, 0xC493, bcd_upto(9));
+            model.ram[0xA037] = bcd_upto(99);
+            model.ram[0xA038] = (uint8_t)rnd(20);
+            model.ram[0xA039] = (uint8_t)rnd(20);
+            coin_slot = (int)(1 + rnd(3));
+            static const uint16_t entries[4] = { 0, 0xCC2C, 0xCC26, 0xCC20 };
+            model.ram[0xA036] = 3;
+            store_model();
+            board.bank = 3;
+            if (rom_call_with(entries[coin_slot], 0, 0, 0, 0)) {
+                failures++;
+                return;
+            }
+            c_coin(0, 0, 0);
+            if (compare("coin", n) == -1) done[0]++;
+        } else {
+            /* a player's next wave */
+            setup_block = rnd(2) ? 0xA1C2 : 0xA1FF;
+            model.ram[0xA08B] = setup_block == 0xA1C2 ? 1 : 2;
+            game_poke(&model, (uint16_t)(setup_block + 8), (uint8_t)rnd(30));
+            cmos_write(&model, 0xC49D, bcd_upto(9));
+            cmos_write(&model, 0xC497, bcd_upto(20));
+            cmos_write(&model, 0xC499, bcd_upto(40));
+            if (call_case("wave set-up", n, 0xDE7C, 0, setup_block, 0, c_wave_setup) == -1) done[1]++;
+        }
+    }
+    long starts = 0;
+    for (int n = 0; n < cases / 2; n++) {
+        memcpy(board.ram, game_ram, sizeof game_ram);
+        load_model();
+        model.ram[0xA0BA] = rnd(2) ? 0xFF : 0x00; /* the attract mode or a game */
+        model.ram[0xA0B7] = rnd(8) ? 1 : 0;
+        model.ram[0xA037] = bcd_upto(99);
+        model.ram[0xA08C] = (uint8_t)rnd(2);
+        cmos_write(&model, 0xC485, bcd_upto(9));
+        cmos_write(&model, 0xC481, bcd_upto(99));
+        cmos_write(&model, 0xC483, bcd_upto(99));
+        cmos_write(&model, 0xC49D, bcd_upto(9));
+        if (call_case("start", n, 0xD861, 0, 0, 0, c_start) == -1) starts++;
+    }
+    printf("test_routines: coins %ld, wave set-ups %ld, starts %ld equal the ROM's (CMOS too)\n", done[0], done[1],
+           starts);
+}
+
 static void test_score(int cases)
 {
     long done = 0, extra = 0;
@@ -830,6 +912,7 @@ int main(int argc, char **argv)
     test_terrain(200);
     test_collisions(3000);
     test_explosions(3000);
+    test_flow(2000);
     if (failures) {
         fprintf(stderr, "test_routines: %d differences\n", failures);
         return 1;

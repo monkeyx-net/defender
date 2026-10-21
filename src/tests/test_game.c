@@ -240,9 +240,12 @@ static void report(long a, const char *what)
                 board.ram[a], game_peek(&model, (uint16_t)a) & 0xFF);
 }
 
+static uint8_t predicted_cmos[256];
+
 static void start_step(uint16_t proc, int kind)
 {
     if (kind == KIND_STEP && !game_step_ported(&model, proc)) return;
+    game_load_cmos(&model, board.cmos); /* CMOS is not RAM: the board's, at each step */
     step_kind = kind;
     step_proc = proc;
     steps++;
@@ -265,6 +268,7 @@ static void start_step(uint16_t proc, int kind)
         steps_unported++;
         return; /* the ROM's writes are copied as usual */
     }
+    memcpy(predicted_cmos, scratch.cmos, sizeof predicted_cmos);
     memset(has_prediction, 0, sizeof has_prediction);
     memset(written, 0, sizeof written);
     for (unsigned a = 0; a < STACK; a++) {
@@ -290,6 +294,15 @@ static int irq_touched_difference(void)
 static void end_step(void)
 {
     step_active = 0;
+    if (memcmp(predicted_cmos, board.cmos, sizeof predicted_cmos)) {
+        for (int i = 0; i < 256; i++)
+            if (predicted_cmos[i] != board.cmos[i]) {
+                if (failures++ < 8)
+                    fprintf(stderr, "test_game: frame %lld: CMOS $%04X = %02X, C %02X\n", (long long)board.frame,
+                            0xC400 + i, board.cmos[i], predicted_cmos[i]);
+                break;
+            }
+    }
     long diff = -1;
     for (unsigned a = 0; a < STACK && diff < 0; a++)
         if (has_prediction[a] && !written[a] && predicted[a] != board.ram[a]) diff = a;
