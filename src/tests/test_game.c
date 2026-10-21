@@ -33,6 +33,7 @@
 #include "emu/board.h"
 #include "sim/game.h"
 #include "sim/irq.h"
+#include "sim/terrain.h"
 
 #define PRIME_FRAMES 1800
 #define FRAMES 5200
@@ -52,9 +53,11 @@ static int failures; /* (also declared below) */
 static Game irq_model;
 static int irq_call = -1;          /* the ported interrupt routine running, or -1 */
 static uint16_t irq_ret, irq_sp;
-static long irq_calls[4], irq_matched[4];
-static const struct { uint16_t pc; const char *name; } irq_routines[4] = {
-    { 0xE39F, "objects_draw" }, { 0xE213, "ship_draw" }, { 0xE07E, "stars_draw" }, { 0xE453, "shots_move" },
+#define IRQ_ROUTINES 5
+static long irq_calls[IRQ_ROUTINES], irq_matched[IRQ_ROUTINES];
+static const struct { uint16_t pc; int bank; const char *name; } irq_routines[IRQ_ROUTINES] = {
+    { 0xE39F, 0, "objects_draw" }, { 0xE213, 0, "ship_draw" }, { 0xE07E, 0, "stars_draw" },
+    { 0xE453, 0, "shots_move" }, { 0xC092, 7, "terrain_update" },
 };
 
 static void irq_routine_start(int i, Board *b)
@@ -66,6 +69,7 @@ static void irq_routine_start(int i, Board *b)
     case 1: ship_draw(&irq_model, b->cpu.a, b->cpu.b); break;
     case 2: stars_draw(&irq_model); break;
     case 3: r = shots_move(&irq_model); break;
+    case 4: terrain_update(&irq_model); break;
     }
     irq_calls[i]++;
     if (r) return; /* not ported */
@@ -82,6 +86,8 @@ static void irq_routine_end(void)
     irq_call = -1;
     irq_model.ram[0xA077] = board.ram[0xA077]; /* the drawing routines' S */
     irq_model.ram[0xA078] = board.ram[0xA078];
+    irq_model.ram[0xA013] = board.ram[0xA013]; /* the terrain's */
+    irq_model.ram[0xA014] = board.ram[0xA014];
     long a = first_difference_of(&irq_model);
     if (a >= 0) {
         if (failures++ < 8)
@@ -299,8 +305,9 @@ static void step_hook(Board *b)
     if (irq_depth) {
         if (irq_call >= 0 && pc == irq_ret && b->cpu.s == irq_sp) irq_routine_end();
         if (irq_call < 0)
-            for (int i = 0; i < 4; i++)
-                if (pc == irq_routines[i].pc) irq_routine_start(i, b);
+            for (int i = 0; i < IRQ_ROUTINES; i++)
+                if (pc == irq_routines[i].pc && (!irq_routines[i].bank || b->bank == irq_routines[i].bank))
+                    irq_routine_start(i, b);
         return;
     }
     if (pc == DISPATCH && !step_active) start_step(b->cpu.u);
@@ -420,7 +427,7 @@ int main(int argc, char **argv)
            "           reordered, %ld took paths not yet ported; %ld frames compared\n",
            steps, steps_matched, steps_reordered, steps_unported, frame_checks);
     printf("test_game: interrupt routines:");
-    for (int i = 0; i < 4; i++) printf(" %s %ld/%ld", irq_routines[i].name, irq_matched[i], irq_calls[i]);
+    for (int i = 0; i < IRQ_ROUTINES; i++) printf(" %s %ld/%ld", irq_routines[i].name, irq_matched[i], irq_calls[i]);
     printf(" matched\n");
     printf("test_game: hit handlers the ROM ran: lander %ld (with the carrying one's), mutant %ld, carrying lander %ld\n",
            handler_calls[0], handler_calls[1], handler_calls[2]);

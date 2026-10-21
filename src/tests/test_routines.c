@@ -24,6 +24,9 @@
  *   - the interrupt's routines on random states: the objects in a band
  *     ($E39F, some at the right edge), the ship and its flame ($E213),
  *     the stars ($E07E); <$77-<$78 (the drawing routines' S) not compared
+ *   - the terrain (bank 7): the world's heights ($C262), its start at a
+ *     random scroll ($C015), then following random scrolls ($C092; <$13-<$14,
+ *     its S, not compared), forgetting it ($C29A)
  *   - score_add ($D360): random scores (BCD, a third of them small), points (BCD words, the pair
  *     and digit bits), players and extra-life intervals; cases that earn an
  *     extra life (not ported) are counted and skipped
@@ -43,6 +46,7 @@
 #include "sim/pods.h"
 #include "sim/humanoids.h"
 #include "sim/irq.h"
+#include "sim/terrain.h"
 #include "sim/wave.h"
 #include "sim/score.h"
 
@@ -609,6 +613,47 @@ static void test_irq(int cases)
            done[0], done[1], done[2]);
 }
 
+static void c_heights(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)x; (void)y; terrain_heights(&model); }
+static void c_terrain_start(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)x; (void)y; terrain_start(&model); }
+static void c_terrain_update(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)x; (void)y; terrain_update(&model); }
+static void c_terrain_forget(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)x; (void)y; terrain_forget(&model); }
+
+static long bank7_case(const char *what, long n, uint16_t pc, void (*c)(uint16_t, uint16_t, uint16_t))
+{
+    store_model();
+    board.bank = 7;
+    if (rom_call_with(pc, 0, 0, 0, 0)) {
+        failures++;
+        return 0;
+    }
+    c(0, 0, 0);
+    game_poke(&model, 0xA013, board.ram[0xA013]);
+    game_poke(&model, 0xA014, board.ram[0xA014]);
+    return compare(what, n) == -1;
+}
+
+static void test_terrain(int cases)
+{
+    long done = 0;
+    for (int n = 0; n < cases; n++) {
+        memcpy(board.ram, game_ram, sizeof game_ram);
+        load_model();
+        game_set_word(&model, 0xA020, (uint16_t)rnd(0x10000));
+        done += bank7_case("terrain heights", n, 0xC262, c_heights);
+        load_model();
+        done += bank7_case("terrain start", n, 0xC015, c_terrain_start);
+        for (int k = 0; k < 8; k++) {
+            load_model();
+            int16_t move = (int16_t)(rnd(2) ? (int)rnd(0x200) - 0x100 : (int)rnd(0x2000) - 0x1000);
+            game_set_word(&model, 0xA020, (uint16_t)(game_word(&model, 0xA020) + move));
+            done += bank7_case("terrain update", n, 0xC092, c_terrain_update);
+        }
+        load_model();
+        done += bank7_case("terrain forget", n, 0xC29A, c_terrain_forget);
+    }
+    printf("test_routines: terrain: %ld calls equal the ROM's\n", done);
+}
+
 static void test_score(int cases)
 {
     long done = 0, extra = 0;
@@ -681,6 +726,7 @@ int main(int argc, char **argv)
     test_enemies(3000);
     test_wave_start(1000);
     test_irq(3000);
+    test_terrain(200);
     if (failures) {
         fprintf(stderr, "test_routines: %d differences\n", failures);
         return 1;

@@ -69,6 +69,7 @@ add_library(defender_core STATIC
   src/sim/background.c
   src/sim/player.c
   src/sim/irq.c
+  src/sim/terrain.c
 )
 target_include_directories(defender_core PUBLIC src)
 target_link_libraries(defender_core PUBLIC m)

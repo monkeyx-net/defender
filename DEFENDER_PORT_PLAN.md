@@ -364,6 +364,20 @@ is $A0 throughout, so `<$xx` is $A0xx.
   index from the address. They keep S at `<$77-<$78` (not modelled).
   `routines` checks every picture's draw (both parities) and erase at
   every line.
+- **The terrain** (bank 7; ported: `src/sim/terrain.c`): its shape is
+  the bit stream at $C350-$C44F, a bit per 32 world units (1 down, 0 up).
+  Cursors for the screen's left edge (`<$09` byte, `<$0F` bit, `<$0D` the
+  byte rotated, `<$11` its line) and right (`<$0B`, `<$10`, `<$0E`,
+  `<$12`) walk it; two circular buffers of 152 entries (line, colour word
+  $7007 up / $0770 down; a copy $1C8 on) at $B700 (`<$05`) and $BA90
+  (`<$07`) serve the two halves of each step (scroll bit 5). $C006 ($C262)
+  builds the heights at $B300-$B6FF (a line per 64 units, from $E0);
+  $C000 ($C015) the cursors and buffers for the scroll (`<$17`, `<$15`
+  the scroll they are at); $C003 ($C092, in the interrupt) moves them with
+  the scroll a step at a time and draws columns $98 down to 1, each
+  clearing its last pixel pair (addresses at $BE20-$BF4F), S kept at
+  `<$13-<$14`; $C009 ($C29A) clears the last drawing. The variables live at
+  $A000-$A017.
 - **The interrupt's routines** (ported: `src/sim/irq.c`): $E39F the
   objects in a band of lines (bottom, top]: an object drawn there is
   erased (+4 = 0; one drawn outside is left alone entirely), one whose line
@@ -533,7 +547,8 @@ Found by comparing instruction traces (`mame_emu`):
   ported interrupt routine: a model loaded from RAM at the call runs the C
   routine, and all of RAM must match when the ROM's returns (no
   interleaving: interrupts are masked inside). The scripted minute: 8937
-  object-band draws, 8937 ship draws, 4469 star frames, 4469 shot moves.
+  object-band draws, 8937 ship draws, 4469 star frames, 4469 shot moves,
+  2495 terrain updates.
 - **Routines on chosen inputs** (label `rom`): `routines` runs a ROM
   routine on the emulated CPU (interrupts masked) until it returns and the
   C one on a model of the same RAM; all of RAM must match. Process steps
@@ -570,7 +585,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
 | S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte), the sound sequencer (`sounds.c`, $D539-$D5A6), the object pool and lists (`objects.c`), the process pool and dispatcher's bookkeeping (`processes.c`) | `sim` |
-| I1 | (started 2026-10-21) The interrupt's work in C: objects, ship, stars and shots drawn (`irq.c`) | `game` (every call in both scripted games), `routines` |
+| I1 | (started 2026-10-21) The interrupt's work in C: objects, ship, stars and shots drawn (`irq.c`), the terrain (`terrain.c`) | `game` (every call in both scripted games), `routines` |
 | S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): the smart bomb, reverse and HUD icons (`player.c`), the background processes and the scanner (`background.c`), the wave's process and arrivals (`wave.c`), landers and mutants with their arrival (`lander.c`), baiters (`baiter.c`), pods and swarmers (`pods.c`), bombers (`bombers.c`), enemy shots (`shots.c`), humanoids walking, dying, falling, landing, carried by the ship, their bonuses (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`) | `game`, `game_hunter`, `routines` |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
