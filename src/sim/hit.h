@@ -14,8 +14,8 @@
 
 #include "sim/game.h"
 
-/* 1 if it hit (the handler has run), 0 if not, -1 if the handler is not
-   ported (the state is then unspecified). */
+/* 1 if it hit (the handler has run), 0 if not (or the handler declined),
+   -1 if the handler is not ported (the state is then unspecified). */
 int hit_test(Game *g, uint16_t list, uint16_t at, uint16_t picture);
 
 #endif

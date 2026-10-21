@@ -43,14 +43,18 @@ static int lander_carrying_hit(Game *g, uint16_t obj)
     return lander_hit(g, obj);
 }
 
+static int done(int r) { return r ? -1 : 1; }
+
 int enemy_hit(Game *g, uint16_t handler, uint16_t obj)
 {
     switch (handler) {
-    case HIT_LANDER: return lander_hit(g, obj);
-    case HIT_LANDER_CARRYING: return lander_carrying_hit(g, obj);
+    case HIT_LANDER: return done(lander_hit(g, obj));
+    case HIT_LANDER_CARRYING: return done(lander_carrying_hit(g, obj));
     case HIT_MUTANT:
         g->ram[MUTANTS]--;
-        return enemy_kill(g, obj, POINTS_150, SOUND_MUTANT, 1);
+        return done(enemy_kill(g, obj, POINTS_150, SOUND_MUTANT, 1));
+    case HUMANOID_ON_GROUND: return humanoid_hit(g, obj, 0);
+    case HUMANOID_CARRIED: return humanoid_hit(g, obj, 1);
     }
     return -1;
 }

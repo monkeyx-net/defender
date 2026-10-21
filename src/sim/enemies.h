@@ -23,7 +23,8 @@
 /* $F416 (free = 1) or $F40D. 0, or -1 if not ported (an extra life) or
    the ROM would stop (no such process or block). */
 int enemy_kill(Game *g, uint16_t obj, uint16_t points, uint16_t script, int free);
-/* Call hit handler `handler` for object `obj`: 0, or -1 if not ported. */
+/* Call hit handler `handler` for object `obj`: 1 if it was hit, 0 if the
+   handler declined (the hit test then reports no hit), -1 if not ported. */
 int enemy_hit(Game *g, uint16_t handler, uint16_t obj);
 
 #endif

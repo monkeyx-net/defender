@@ -281,10 +281,25 @@ is $A0 throughout, so `<$xx` is $A0xx.
   kill $F416 (the score and script follow the call): the owner process
   ends ($D013), the block is freed ($D0C7; not by $F40D), $D360 scores,
   $F434 erases it and starts the explosion ($FC63), the script plays.
-- **Falling humanoid** ($F216, every 4 ticks; ported in
-  `src/sim/humanoids.c`): 8 faster a step up to $300; on the terrain it
-  dies above $E0 ($ED77, hit point +4 + $0107), else it lands (processes
-  $EE65 / $EE73, to port). $F24C carries it under the ship (to port).
+- **Humanoids** (ported: `src/sim/humanoids.c`). One process ($ECC9,
+  every 2 ticks) walks them, a table slot a step over the first 16 slots:
+  a humanoid on screen with handler $ED70 walks 2 pixels and steps its
+  picture ($F901-$F90B going left, $F915-$F91F right), following the
+  terrain a line a step (4 lines above it going left, 15 going right,
+  never below line $E8); `<$DF` <= 8 turns it. Hit handlers: $ED70 on the
+  ground (the laser kills it; the ship, `<$DE` set, passes: the handler
+  returns A = 0 by popping the hit test's return), $ED91 carried or
+  falling (owner 0: as $ED70; the laser kills it and its owner process;
+  the ship catches it: script $D4DA, process $EE73, the owner resumes at
+  $F24C; to port with the ship's collisions). Falling ($F216, every 4
+  ticks): 8 faster a step up to $300; on the terrain it dies above $E0
+  ($ED77, hit point +4 + $0107), else it lands ($EE65). Carried by the
+  ship ($F24C, every tick): 10 lines below the ship's y, $80 units on,
+  until the terrain: set down ($EE73). Landing and setting down: owner 0,
+  handler $ED70, script $D4DF. $EE65 / $EE73: a bonus object (250 $F9DD /
+  500 $F9E7, handler $EDBC) at the humanoid, $1800 lower (above line $80)
+  or $2000 higher, moving at the ship's speed, flags $11; 50 ticks, then
+  freed ($EEB2).
 - **Score** (ported: `src/sim/score.c`): $D360 adds a points word to the
   player block ($D6FE: `<$8B` 1 → $A1C2, else $A1FF; +0..+3 BCD score,
   +4..+6 the next extra life, +7 ships, +9 smart bombs): the high byte's
@@ -383,9 +398,12 @@ Found by comparing instruction traces (`mame_emu`):
   not write goes unnoticed when the ROM writes the value it already held.
 - **Routines on chosen inputs** (label `rom`): `routines` runs a ROM
   routine on the emulated CPU (interrupts masked) until it returns and the
-  C one on a model of the same RAM; all of RAM must match. So far
-  `score_add` ($D360): 5000 random scores, points, players and extra-life
-  intervals (extra lives skipped).
+  C one on a model of the same RAM; all of RAM must match. Process steps
+  the same way, from a state built in the model, until the ROM's step is
+  back at the dispatcher. So far `score_add` ($D360): 5000 random scores,
+  points, players and extra-life intervals (extra lives skipped); the
+  humanoid steps (falling at the $E0 edge, carried by the ship, walking on
+  any terrain, the bonuses at any line): about 1100 cases.
 - **To add with the C game** (as Robotron's 3.2): the C game and the
   emulated board run the same inputs side by side and their state (objects,
   score, wave, random numbers, sound commands) is compared every frame;
@@ -407,7 +425,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
 | S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte), the sound sequencer (`sounds.c`, $D539-$D5A6), the object pool and lists (`objects.c`), the process pool and dispatcher's bookkeeping (`processes.c`) | `sim` |
-| S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): landers and mutants (`lander.c`), enemy shots (`shots.c`), humanoids' deaths and falls (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`) | `game`, `game_hunter`, `routines` |
+| S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): landers and mutants (`lander.c`), enemy shots (`shots.c`), humanoids walking, dying, falling, landing, carried by the ship, their bonuses (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`) | `game`, `game_hunter`, `routines` |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |

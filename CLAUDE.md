@@ -82,7 +82,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   countdown), `game.c` (the C game's state: a model of all of RAM, the
   pools typed, the rest raw; `game_step` runs a process step in C),
   `lander.c` (landers and mutants, every step), `shots.c` (enemy shots),
-  `humanoids.c` (the humanoid table, a humanoid's death),
+  `humanoids.c` (the humanoids: walking, hit, falling, landing, carried,
+  the bonuses),
   `explosions.c` (starting one), `hit.c` (the hit test), `enemies.c` (hit
   handlers, kills), `score.c` (scoring and the score digits); `laser.c`
   also runs the laser as a process step;
@@ -142,8 +143,10 @@ Every change keeps `ctest` green.
   fire, sweeping up and down, turning; 12000 frames)
 - `routines` - label `rom`: ROM routines run on the emulated CPU from
   chosen RAM and registers until they return, against the C ones on the
-  same RAM (`score_add`, 5000 random cases); use it where scripted play
-  rarely reaches a path
+  same RAM (`score_add`, 5000 random cases), and process steps from a
+  state built in the model (copied to RAM) until the ROM's step is back at
+  the dispatcher (the humanoids' steps); use it where scripted play rarely
+  reaches a path, and aim cases at the edges (thresholds, clamps)
 - `mame_rom_map` - label `mame`: MAME's view of the main CPU's ROM (each
   bank at $C000, then $D000-$FFFF) equals `defender --dump-rom`
 - `mame_capture` - label `mame`: runs the scripted game in

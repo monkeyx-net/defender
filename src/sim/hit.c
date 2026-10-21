@@ -66,7 +66,7 @@ int hit_test(Game *g, uint16_t list, uint16_t at, uint16_t picture)
                     screen = (uint16_t)(screen + 0x100);
                 }
                 game_set_word(g, HIT_AT, (uint16_t)(screen + off));
-                return enemy_hit(g, game_word(g, (uint16_t)(x + 8)), x) ? -1 : 1;
+                return enemy_hit(g, game_word(g, (uint16_t)(x + 8)), x);
             } while (!(rowb & 0x80));
             y = (uint16_t)(y + r[0xA0D4]);
             u = (uint16_t)(u + r[0xA0D5]);

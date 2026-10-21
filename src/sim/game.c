@@ -113,6 +113,11 @@ int game_step_ported(const Game *g, uint16_t proc)
     case LANDER_TOP:
     case MUTANT:
     case HUMANOID_FALL:
+    case HUMANOID_CARRIED_BY_SHIP:
+    case HUMANOID_WALK:
+    case BONUS_250:
+    case BONUS_500:
+    case BONUS_SHOW:
     case LASER_FIRE:
     case LASER_TICK_RIGHT:
     case LASER_TICK_LEFT: return 1;
@@ -131,6 +136,11 @@ StepResult game_step(Game *g, uint16_t proc)
     case LANDER_TOP: return lander_top(g, proc);
     case MUTANT: return mutant_step(g, proc);
     case HUMANOID_FALL: return humanoid_fall(g, proc);
+    case HUMANOID_CARRIED_BY_SHIP: return humanoid_carried(g, proc);
+    case HUMANOID_WALK: return humanoid_walk(g, proc);
+    case BONUS_250: return bonus_start(g, proc, 0);
+    case BONUS_500: return bonus_start(g, proc, 1);
+    case BONUS_SHOW: return bonus_end(g, proc);
     case LASER_FIRE: return laser_fire(g, proc);
     case LASER_TICK_RIGHT:
     case LASER_TICK_LEFT: return laser_step(g, proc, p->resume == LASER_TICK_LEFT);
