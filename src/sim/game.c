@@ -1,8 +1,10 @@
 #include "sim/game.h"
 
+#include "sim/baiter.h"
 #include "sim/humanoids.h"
 #include "sim/lander.h"
 #include "sim/laser.h"
+#include "sim/wave.h"
 #include "sim/rng.h"
 #include "sim/sounds.h"
 
@@ -14,6 +16,12 @@
 uint8_t game_read(const Game *g, uint16_t addr)
 {
     return addr < GAME_RAM ? (uint8_t)game_peek(g, addr) : g->data[addr];
+}
+
+uint8_t game_read_bank(const Game *g, int bank, uint16_t addr)
+{
+    if (addr >= 0xC000 && addr < 0xD000) return g->bank[bank] ? g->bank[bank][addr - 0xC000] : 0;
+    return game_read(g, addr);
 }
 
 int game_peek(const Game *g, uint16_t addr)
@@ -120,7 +128,9 @@ int game_step_ported(const Game *g, uint16_t proc)
     case BONUS_SHOW:
     case LASER_FIRE:
     case LASER_TICK_RIGHT:
-    case LASER_TICK_LEFT: return 1;
+    case LASER_TICK_LEFT:
+    case BAITER:
+    case WAVE: return 1;
     }
     return 0;
 }
@@ -142,6 +152,8 @@ StepResult game_step(Game *g, uint16_t proc)
     case BONUS_500: return bonus_start(g, proc, 1);
     case BONUS_SHOW: return bonus_end(g, proc);
     case LASER_FIRE: return laser_fire(g, proc);
+    case BAITER: return baiter_step(g, proc);
+    case WAVE: return wave_step(g, proc);
     case LASER_TICK_RIGHT:
     case LASER_TICK_LEFT: return laser_step(g, proc, p->resume == LASER_TICK_LEFT);
     }

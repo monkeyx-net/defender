@@ -10,7 +10,9 @@
  *     from its resume address until it is back at the dispatcher ($E856),
  *     the C step from the same state: a humanoid falling onto the terrain
  *     at various speeds ($F216), carried by the ship down to it ($F24C),
- *     the bonus that follows ($EE65, $EE73, $EEB2)
+ *     the bonus that follows ($EE65, $EE73, $EEB2); the wave's step ($DCEA)
+ *     with random counts, timers and settings (landers, mutants and
+ *     baiters arriving, the ramp); baiters ($EAB4) anywhere around the ship
  *   - score_add ($D360): random scores (BCD, a third of them small), points (BCD words, the pair
  *     and digit bits), players and extra-life intervals; cases that earn an
  *     extra life (not ported) are counted and skipped
@@ -22,7 +24,9 @@
 #include "assets/rom.h"
 #include "emu/board.h"
 #include "sim/game.h"
+#include "sim/baiter.h"
 #include "sim/humanoids.h"
+#include "sim/wave.h"
 #include "sim/score.h"
 
 #define PRIME_FRAMES 1800
@@ -197,6 +201,76 @@ static void test_humanoid_steps(int cases)
            steps_skipped);
 }
 
+static void test_wave_steps(int cases)
+{
+    long before_compared = steps_compared, before_skipped = steps_skipped;
+    for (int n = 0; n < cases; n++) {
+        memcpy(board.ram, game_ram, sizeof game_ram);
+        load_model();
+        uint8_t *r = model.ram;
+        r[0xA0BA] = rnd(8) ? 0 : 0x08;
+        r[0xA112] = (uint8_t)rnd(10);           /* landers */
+        r[0xA0FB] = (uint8_t)rnd(20);           /* landers to come */
+        r[0xA113] = (uint8_t)rnd(3);
+        r[0xA114] = (uint8_t)rnd(3);
+        r[0xA115] = (uint8_t)rnd(3);
+        r[0xA116] = (uint8_t)rnd(3);
+        r[0xA0FE] = 0;
+        r[0xA100] = (uint8_t)(1 + rnd(8));      /* landers every */
+        r[0xA101] = (uint8_t)(1 + rnd(6));      /* landers at once */
+        r[0xA10F] = (uint8_t)(1 + rnd(40));     /* baiters every */
+        r[0xA117] = (uint8_t)(1 + rnd(2));
+        r[0xA118] = (uint8_t)(rnd(2) ? 1 + rnd(3) : 1 + rnd(40));
+        if (!rnd(3)) { /* few left: the baiter timer's cut */
+            r[0xA112] = (uint8_t)rnd(4);
+            r[0xA0FB] = r[0xA113] = r[0xA114] = r[0xA115] = r[0xA116] = 0;
+        }
+        r[0xA119] = (uint8_t)rnd(14);
+        r[0xA0AE] = (uint8_t)rnd(0x14);
+        r[0xA024] = (uint8_t)rnd(0xF0);
+        if (rnd(2)) r[HUMANOIDS_LEFT] = 0;      /* mutants instead of landers */
+        r[0xA0DF] = (uint8_t)rnd(256);
+        r[0xA0E0] = (uint8_t)rnd(256);
+        r[0xA0E1] = (uint8_t)rnd(256);
+        game_set_word(&model, 0xA020, (uint16_t)rnd(0x10000));
+        uint16_t p = new_process(WAVE, 0);
+        game_poke(&model, (uint16_t)(p + 7), (uint8_t)(1 + rnd(3)));
+        step_case("wave", n, p);
+    }
+    printf("test_routines: wave steps: %ld equal the ROM's, %ld not ported\n", steps_compared - before_compared,
+           steps_skipped - before_skipped);
+}
+
+static void test_baiter_steps(int cases)
+{
+    long before_compared = steps_compared, before_skipped = steps_skipped;
+    for (int n = 0; n < cases; n++) {
+        memcpy(board.ram, game_ram, sizeof game_ram);
+        load_model();
+        model.ram[0xA0DF] = (uint8_t)rnd(256);
+        model.ram[0xA0E0] = (uint8_t)rnd(256);
+        baiter_spawn(&model); /* checked by the wave's steps */
+        uint16_t p = model.processes.free_small ? 0 : 0;
+        for (uint16_t a = model.processes.head; a; a = processes_at(&model.processes, a)->link)
+            if (processes_at(&model.processes, a)->resume == BAITER) p = a;
+        if (!p) continue;
+        Object *o = objects_at(&model.objects, game_word(&model, (uint16_t)(p + 7)));
+        o->picture = rnd(3) ? 0xF9B7 : (uint16_t)(0xF9A3 + 10 * rnd(3));
+        static const int edges[] = { -0x281, -0x280, -0x27F, 0x27F, 0x280, 0x281 };
+        o->x = (uint16_t)(game_word(&model, 0xA0CC) + (rnd(2) ? (int)rnd(0x800) - 0x400 : edges[rnd(6)]));
+        o->y = (uint16_t)((0x2A + rnd(0xC6)) << 8 | rnd(256));
+        game_poke(&model, (uint16_t)(p + 9), (uint8_t)(1 + rnd(2)));
+        model.ram[0xA0DF] = (uint8_t)rnd(256);
+        model.ram[0xA111] = (uint8_t)rnd(256);
+        model.ram[0xA110] = (uint8_t)rnd(30);
+        game_set_word(&model, 0xA0CA, (uint16_t)(rnd(0x400) - 0x200));
+        model.processes.current = p;
+        step_case("baiter", n, p);
+    }
+    printf("test_routines: baiter steps: %ld equal the ROM's, %ld not ported\n", steps_compared - before_compared,
+           steps_skipped - before_skipped);
+}
+
 static void test_score(int cases)
 {
     long done = 0, extra = 0;
@@ -244,6 +318,10 @@ int main(int argc, char **argv)
     }
     for (unsigned a = 0xD000; a <= 0xFFFF; a++) data[a] = (uint8_t)rom_byte(&rom, a);
     for (unsigned a = 0xC000; a < 0xD000; a++) data[a] = (uint8_t)rom_bank_byte(&rom, 2, a - 0xC000);
+    static uint8_t banks[8][0x1000];
+    for (int b = 1; b <= 7; b++)
+        for (unsigned a = 0; a < 0x1000; a++) banks[b][a] = (uint8_t)rom_bank_byte(&rom, b, a);
+    for (int b = 1; b <= 7; b++) model.bank[b] = banks[b];
     model.data = data;
     static uint8_t cmos[BOARD_CMOS_SIZE];
     board_init(&board, &rom, NULL);
@@ -258,6 +336,8 @@ int main(int argc, char **argv)
     memcpy(game_ram, board.ram, sizeof game_ram);
     test_score(5000);
     test_humanoid_steps(2000);
+    test_wave_steps(2000);
+    test_baiter_steps(2000);
     if (failures) {
         fprintf(stderr, "test_routines: %d differences\n", failures);
         return 1;

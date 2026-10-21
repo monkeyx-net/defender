@@ -1,5 +1,6 @@
 #include "sim/enemies.h"
 
+#include "sim/baiter.h"
 #include "sim/explosions.h"
 #include "sim/humanoids.h"
 #include "sim/score.h"
@@ -53,6 +54,7 @@ int enemy_hit(Game *g, uint16_t handler, uint16_t obj)
     case HIT_MUTANT:
         g->ram[MUTANTS]--;
         return done(enemy_kill(g, obj, POINTS_150, SOUND_MUTANT, 1));
+    case HIT_BAITER: return done(baiter_hit(g, obj));
     case HUMANOID_ON_GROUND: return humanoid_hit(g, obj, 0);
     case HUMANOID_CARRIED: return humanoid_hit(g, obj, 1);
     }

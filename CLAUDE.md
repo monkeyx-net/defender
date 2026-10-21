@@ -84,7 +84,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   `lander.c` (landers and mutants, every step), `shots.c` (enemy shots),
   `humanoids.c` (the humanoids: walking, hit, falling, landing, carried,
   the bonuses),
-  `explosions.c` (starting one), `hit.c` (the hit test), `enemies.c` (hit
+  `explosions.c` (starting one, an object appearing), `wave.c` (the
+  wave's process: arrivals, baiters, the ramp), `baiter.c` (baiters), `hit.c` (the hit test), `enemies.c` (hit
   handlers, kills), `score.c` (scoring and the score digits); `laser.c`
   also runs the laser as a process step;
   each mirrors a ROM routine's arithmetic exactly
@@ -138,7 +139,8 @@ Every change keeps `ctest` green.
   broke into must match with the interrupt's writes all before or all
   after it). The scratch byte `<$73` and the like are RAM
   too: port the stores to them. The model's `data` is the fixed ROM with
-  bank 2 (pictures, font) at $C000.
+  bank 2 (pictures, font) at $C000; `bank[]` holds banks 1, 2, 3 and 7
+  for the tables the code reads with that bank selected.
 - `game_hunter` - label `rom`: `game` on a second scripted game (rapid
   fire, sweeping up and down, turning; 12000 frames)
 - `routines` - label `rom`: ROM routines run on the emulated CPU from

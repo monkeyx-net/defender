@@ -81,6 +81,59 @@ static void shot_tick(Game *g, uint16_t proc, uint16_t obj)
     if (shot_fire(g, obj, proc)) game_sound(g, SOUND_SHOT);
 }
 
+void mutant_spawn(Game *g, uint8_t n)
+{
+    g->ram[SCRATCH] = n;
+    do {
+        uint16_t proc = processes_create(&g->processes, MUTANT, 0, 0);
+        uint16_t obj = objects_alloc(&g->objects);
+        if (!proc || !obj) return;
+        objects_setup(&g->objects, obj, proc, PICTURE_MUTANT, MUTANT_HIT, MUTANT_DATA);
+        Object *o = objects_at(&g->objects, obj);
+        game_random(g);
+        uint16_t off = (uint16_t)(game_word(g, 0xA020) - 0x2580);
+        game_set_word(g, SCRATCH_75, off);
+        uint16_t x = (uint16_t)(game_word(g, 0xA0E0) - off);
+        if (x < 0x4B00) x = (uint16_t)(x + 0x8000);
+        o->x = (uint16_t)(x + off);
+        o->y = (uint16_t)((uint8_t)((g->ram[RANDOM] >> 1) + 0x2A) << 8 | (o->y & 0xFF));
+        o->vy = o->vx = 0;
+        game_poke(g, (uint16_t)(proc + 7), game_random_upto(g, g->ram[WAVE_MUTANT_SHOTS]));
+        appear_start(g, obj);
+        o->owner = proc;
+        game_set_word(g, (uint16_t)(proc + 7), obj);
+        g->ram[MUTANTS]++;
+    } while (--g->ram[SCRATCH]);
+}
+
+void lander_spawn(Game *g, uint8_t n)
+{
+    g->ram[SCRATCH] = n;
+    do {
+        if (!g->ram[HUMANOIDS_LEFT]) {
+            mutant_spawn(g, g->ram[SCRATCH]);
+            return;
+        }
+        uint16_t proc = processes_create(&g->processes, LANDER_SEEK, 0, 0);
+        uint16_t obj = objects_alloc(&g->objects);
+        if (!proc || !obj) return;
+        objects_setup(&g->objects, obj, proc, PICTURE_FIRST, 0xF20B, 0x4433);
+        Object *o = objects_at(&g->objects, obj);
+        game_random(g);
+        o->x = game_word(g, 0xA0E0);
+        o->y = (uint16_t)(0x2C << 8 | (o->y & 0xFF));
+        o->vy = game_word(g, WAVE_DESCENT);
+        game_poke(g, (uint16_t)(proc + 0xD), game_random_upto(g, g->ram[WAVE_SHOT_TICKS]));
+        uint8_t b = game_random_upto(g, g->ram[0xA102]);
+        o->vx = b & 1 ? (uint16_t)~(uint16_t)b : b;
+        o->owner = proc;
+        appear_start(g, obj);
+        game_set_word(g, (uint16_t)(proc + 7), obj);
+        pick_humanoid(g, proc);
+        g->ram[LANDERS]++;
+    } while (--g->ram[SCRATCH]);
+}
+
 /* $F15E */
 StepResult mutant_step(Game *g, uint16_t proc)
 {

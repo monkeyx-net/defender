@@ -24,12 +24,15 @@ typedef struct {
     Objects objects;
     Processes processes;
     uint8_t ram[GAME_RAM];  /* bytes outside the pools */
-    const uint8_t *data;    /* 64 KB, indexed by ROM address */
+    const uint8_t *data;    /* 64 KB, indexed by ROM address: the fixed ROM, bank 2 at $C000 */
+    const uint8_t *bank[8]; /* 4 KB each at $C000 (banks 1, 2, 3, 7), for the tables in them */
     int sound_sent;         /* the last sound sent to the board ($D539), -1 for none */
 } Game;
 
 /* A byte as the main CPU reads it: RAM below $C000, `data` above. */
 uint8_t game_read(const Game *g, uint16_t addr);
+/* A byte of ROM bank `bank` at $C000-$CFFF (or the fixed ROM above). */
+uint8_t game_read_bank(const Game *g, int bank, uint16_t addr);
 /* A RAM byte or big-endian word, wherever it is kept. */
 int game_peek(const Game *g, uint16_t addr);
 void game_poke(Game *g, uint16_t addr, uint8_t value);

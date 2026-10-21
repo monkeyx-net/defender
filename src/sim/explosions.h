@@ -23,6 +23,12 @@
 #define HIT_POINT 0xA0F8        /* <$F8 */
 #define HIT_POINT_ADDR HIT_POINT
 
+/* $FC69: an object appears: it is put at the head of the screen list with
+   the hidden picture ($F8EC, [$FFDD]) while a slot (+0 $AF00) draws it
+   coming together; off screen or with no slot free it shows at once.
+   Script $D4EE unless `<$BA` has bit 7. The slot is the one after `<$E2`,
+   which it does not move on. */
+void appear_start(Game *g, uint16_t obj);
 /* $FCCC: an explosion of object `obj` (not if off screen, or no slot). */
 void explosion_start(Game *g, uint16_t obj);
 /* $FDD5: erase what the slot at `slot` drew. */

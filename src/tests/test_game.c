@@ -274,7 +274,12 @@ int main(int argc, char **argv)
        and the font) at $C000, as the drawing routines select it */
     for (unsigned a = 0xD000; a <= 0xFFFF; a++) data[a] = (uint8_t)rom_byte(&rom, a);
     for (unsigned a = 0xC000; a < 0xD000; a++) data[a] = (uint8_t)rom_bank_byte(&rom, 2, a - 0xC000);
+    static uint8_t banks[8][0x1000];
+    for (int b = 1; b <= 7; b++)
+        for (unsigned a = 0; a < 0x1000; a++) banks[b][a] = (uint8_t)rom_bank_byte(&rom, b, a);
+    for (int b = 1; b <= 7; b++) model.bank[b] = banks[b];
     model.data = scratch.data = data;
+    for (int b = 1; b <= 7; b++) scratch.bank[b] = model.bank[b];
     static uint8_t cmos[BOARD_CMOS_SIZE];
     board_init(&board, &rom, NULL);
     for (int i = 0; i < PRIME_FRAMES; i++) board_run_frame(&board, NULL);

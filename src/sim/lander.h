@@ -35,6 +35,14 @@
 #define LANDER_TOP 0xF101
 #define MUTANT 0xF15E
 
+/* $EF9C: `n` landers arrive (with no humanoid left, mutants instead):
+   each a process ($EFF6) and an object at a random x on line $2C, coming
+   down at the wave's speed, sideways at 1..[$A102]+1 either way, its first
+   shot in 1..[$A105]+1 steps; it appears ($FC69) and picks a humanoid.
+   `<$73` counts down. */
+void lander_spawn(Game *g, uint8_t n);
+/* $EF15: `n` mutants arrive, at a random x away from the screen. */
+void mutant_spawn(Game *g, uint8_t n);
 StepResult lander_seek(Game *g, uint16_t proc);
 StepResult lander_align(Game *g, uint16_t proc);
 StepResult lander_rise(Game *g, uint16_t proc);

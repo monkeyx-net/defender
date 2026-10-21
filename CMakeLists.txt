@@ -62,6 +62,8 @@ add_library(defender_core STATIC
   src/sim/score.c
   src/sim/hit.c
   src/sim/enemies.c
+  src/sim/baiter.c
+  src/sim/wave.c
 )
 target_include_directories(defender_core PUBLIC src)
 target_link_libraries(defender_core PUBLIC m)

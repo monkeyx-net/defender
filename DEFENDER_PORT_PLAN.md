@@ -239,6 +239,44 @@ is $A0 throughout, so `<$xx` is $A0xx.
 - **Freeing and erasing** ($F3FB, in `src/sim/game.c`): $D0C7, then bank
   2 (`<$36`) and the picture's erase routine at +4: zeros over its width
   x height.
+- **Waves** (process $DCEA, every 15 ticks, ported: `src/sim/wave.c`):
+  enemies left ($DDAE) = `<$A112` landers + `<$FB` landers to come +
+  $A113 + $A114 + $A116 + `<$A115` mutants + `<$FE`; none: the wave ends
+  (`<$BA` = $77, $D07C, $DBB6 saves the wave to the player block, $DDEC,
+  the player's +7 + 1, then $D91E: to port). 8 or fewer: the baiter timer
+  $A118 is cut to [$A10F]/2+1 (/4+1 with 3 or fewer); when it runs out it
+  restarts at [$A10F] (1..[$A10F]/4+1 with under 4 left) and a baiter
+  comes ($EA80) while `<$A119` < 12. Every [$A100] steps ($A117), or with
+  no lander left, min([$A101], `<$FB`) landers arrive while under 8 are
+  alive ($EF9C). `<$AE` counts to $10. `<$24` counts steps; past $F0 (a
+  minute) bank 3's $C00F adds to a CMOS bookkeeping counter (B = 6; to
+  port with the CMOS) and leaves bank 3 selected. Every 40 steps ($DEEC,
+  B = 2) the settings from $A0FB ramp: bank 7's table at [$C011]-[$C013],
+  8 bytes per setting (max, min, deltas by column B), kept within. Wave
+  start ($DC1E, to port): the humanoid walker, the table cleared, the
+  humanoids placed ($DBE1: groups of a quarter at x $00/$40/$80/$C0 high,
+  the rest at random; line $E0, flags $10, picture $F901 or $F915), the
+  player block's wave settings (+B on) copied to $A0FB-$A111, $A112-$A119
+  cleared, then $EB9E, $EF15 (mutants carried over), $EB36, $F29D.
+- **Arrivals**: landers ($EF9C, ported in `lander.c`): a process
+  ($EFF6) and an object (+12 $4433, handler $F20B) at x = `<$E0-<$E1`
+  after a random step, line $2C, at the wave's descent ($A103), sideways
+  1..[$A102]+1 (odd: the other way, ~), first shot 1..[$A105]+1; with no
+  humanoid left mutants instead ($EF15: away from the screen, x =
+  `<$E0-<$E1` - (scroll - $2580), + $8000 under $4B00). Appearing ($FC69,
+  ported in `explosions.c`): the hidden picture [$FF9D] ($F8EC), the object
+  made the screen list's head, a slot after `<$E2` (not moved on) with +0
+  $AF00, +2 the picture, +A the object, flags | 2, script [$FFDD] ($D4EE)
+  unless `<$BA` bit 7; off screen ($2600) or no slot: at once.
+- **Baiters** (ported: `src/sim/baiter.c`): $EA80 a process ($EAB4) and
+  an object ($F9A3, handler $EB2B, +12 $3333) at x = (`<$DF` & $1F,
+  `<$E0`) + scroll, line its x's low byte / 2 + $2A, first shot in 8;
+  steered, then appearing. $EAB4 every 6 ticks: shoots every
+  1..[$A110]+1 (script $D52F); at each turn of its picture ($F9A3-$F9B7),
+  when `<$DF` > [$A111], steers ($EAEE): beyond $280 units of the ship it
+  moves at the ship's speed $40 towards it; more than 10 lines off, at
+  (±$100 + the ship's vertical speed) / 2 towards it. Hit: 200 points,
+  script $D4FD.
 - **Enemy shots** (ported: `src/sim/shots.c`): $E3F3 takes a free block
   for a shot from an object on screen below line $2A, at most 20 (`<$99`),
   in screen coordinates (+A column.line, +C line.column), +15 = +16 = $14,
@@ -403,7 +441,11 @@ Found by comparing instruction traces (`mame_emu`):
   back at the dispatcher. So far `score_add` ($D360): 5000 random scores,
   points, players and extra-life intervals (extra lives skipped); the
   humanoid steps (falling at the $E0 edge, carried by the ship, walking on
-  any terrain, the bonuses at any line): about 1100 cases.
+  any terrain, the bonuses at any line): about 1100 cases; the wave's
+  steps with random counts, timers and settings (landers, mutants and
+  baiters arriving, the ramp, few enemies left): 2000; baiter steps
+  around the ship (its $280 and 10-line edges): 2000. The C model reads
+  banks 1, 2, 3 and 7 for their tables (`Game.bank`).
 - **To add with the C game** (as Robotron's 3.2): the C game and the
   emulated board run the same inputs side by side and their state (objects,
   score, wave, random numbers, sound commands) is compared every frame;
@@ -425,7 +467,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
 | S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte), the sound sequencer (`sounds.c`, $D539-$D5A6), the object pool and lists (`objects.c`), the process pool and dispatcher's bookkeeping (`processes.c`) | `sim` |
-| S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): landers and mutants (`lander.c`), enemy shots (`shots.c`), humanoids walking, dying, falling, landing, carried by the ship, their bonuses (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`) | `game`, `game_hunter`, `routines` |
+| S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): the wave's process and arrivals (`wave.c`), landers and mutants with their arrival (`lander.c`), baiters (`baiter.c`), enemy shots (`shots.c`), humanoids walking, dying, falling, landing, carried by the ship, their bonuses (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`) | `game`, `game_hunter`, `routines` |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |
