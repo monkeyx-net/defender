@@ -277,6 +277,34 @@ is $A0 throughout, so `<$xx` is $A0xx.
   moves at the ship's speed $40 towards it; more than 10 lines off, at
   (±$100 + the ship's vertical speed) / 2 towards it. Hit: 200 points,
   script $D4FD.
+- **Pods and swarmers** (ported: `src/sim/pods.c`). Pods ($EB36) are
+  objects without a process of their own ($F8F7, handler $EB74, +12
+  $CCCC, owned by the caller's process) at x ((`<$E0` & $3F) + $10,
+  `<$E1`), line `<$E1`/2 + $2A, drifting at fixed random speeds. A pod hit
+  ($EB74 → $F41D: freed, its owner lives on): 1000 points, script $D4F3,
+  1..7 swarmers burst out ($EB9E), `<$A114` - 1. Swarmers ($EB9E, at most
+  20 by `<$A116`): a process and an object ($F97B, handler $EBE9, +12
+  $2424) at the given object, random speeds ($EB89), +9 a vertical pull
+  (random & [$A10E]), a first sleep of 0-31 ticks (+4), +B ticks to the
+  first shot; they go straight on the screen list. $EC17 aims them
+  sideways at [$A10C] towards the ship; $EC2A every 3 ticks pulls them to
+  the ship's line (±$200, damped by a quarter of a 256th, jittered),
+  turns them back far off screen ($12C0 / $2580), shoots every
+  1..[$A10D]+1 steps when heading at the ship ($EC86: 8 x their speed,
+  script $D534). A swarmer hit: 150 points, script $D516, picture $F8E2 2
+  lines up and 2 pixels left for its explosion.
+- **Bombers** (ported: `src/sim/bombers.c`): $F29D a group of up to 3
+  under one large process ($F2F7, every tick): +7/+9/+B its objects ($F929,
+  handler $F3BC, +12 $8888), +F how many, +10 the base line ($50); they
+  arrive at the ship's x + $8000 + 1.5 x their number, at ±[$A106]
+  (alternate groups the other way, `<$AA`). Each tick one picked at random
+  (`<$DF` & 6) steps its picture ($F929-$F947), gets a push of
+  (`<$DF` & $3F) - $20 and damping; off screen it drifts to the base line
+  (which wanders by -2..1 within $40-$68 when `<$DF` <= $40), on screen it
+  keeps $10-$20 lines from the ship's; 1 tick in 8 (`<$E1` & 7) it lays a
+  mine ($F3DC: a shot $F95B, +12 $E498, under 10 shots, lasting
+  (`<$DF` & $1F) + 1). A bomber hit ($F41D): 250 points, script $D502,
+  out of its group; the group's process ends with its last bomber.
 - **Enemy shots** (ported: `src/sim/shots.c`): $E3F3 takes a free block
   for a shot from an object on screen below line $2A, at most 20 (`<$99`),
   in screen coordinates (+A column.line, +C line.column), +15 = +16 = $14,
@@ -444,7 +472,10 @@ Found by comparing instruction traces (`mame_emu`):
   any terrain, the bonuses at any line): about 1100 cases; the wave's
   steps with random counts, timers and settings (landers, mutants and
   baiters arriving, the ramp, few enemies left): 2000; baiter steps
-  around the ship (its $280 and 10-line edges): 2000. The C model reads
+  around the ship (its $280 and 10-line edges): 2000; every arrival
+  routine called on the ROM and in C from random states (3000), then the
+  steps of the swarmers, bombers and baiters made (about 2700) and every
+  hit handler on them (about 5600). The C model reads
   banks 1, 2, 3 and 7 for their tables (`Game.bank`).
 - **To add with the C game** (as Robotron's 3.2): the C game and the
   emulated board run the same inputs side by side and their state (objects,
@@ -467,7 +498,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
 | S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte), the sound sequencer (`sounds.c`, $D539-$D5A6), the object pool and lists (`objects.c`), the process pool and dispatcher's bookkeeping (`processes.c`) | `sim` |
-| S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): the wave's process and arrivals (`wave.c`), landers and mutants with their arrival (`lander.c`), baiters (`baiter.c`), enemy shots (`shots.c`), humanoids walking, dying, falling, landing, carried by the ship, their bonuses (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`) | `game`, `game_hunter`, `routines` |
+| S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): the wave's process and arrivals (`wave.c`), landers and mutants with their arrival (`lander.c`), baiters (`baiter.c`), pods and swarmers (`pods.c`), bombers (`bombers.c`), enemy shots (`shots.c`), humanoids walking, dying, falling, landing, carried by the ship, their bonuses (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`) | `game`, `game_hunter`, `routines` |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |

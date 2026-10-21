@@ -85,7 +85,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   `humanoids.c` (the humanoids: walking, hit, falling, landing, carried,
   the bonuses),
   `explosions.c` (starting one, an object appearing), `wave.c` (the
-  wave's process: arrivals, baiters, the ramp), `baiter.c` (baiters), `hit.c` (the hit test), `enemies.c` (hit
+  wave's process: arrivals, baiters, the ramp), `baiter.c` (baiters), `pods.c` (pods and
+  swarmers), `bombers.c` (bombers), `hit.c` (the hit test), `enemies.c` (hit
   handlers, kills), `score.c` (scoring and the score digits); `laser.c`
   also runs the laser as a process step;
   each mirrors a ROM routine's arithmetic exactly

@@ -1,9 +1,11 @@
 #include "sim/game.h"
 
 #include "sim/baiter.h"
+#include "sim/bombers.h"
 #include "sim/humanoids.h"
 #include "sim/lander.h"
 #include "sim/laser.h"
+#include "sim/pods.h"
 #include "sim/wave.h"
 #include "sim/rng.h"
 #include "sim/sounds.h"
@@ -130,6 +132,9 @@ int game_step_ported(const Game *g, uint16_t proc)
     case LASER_TICK_RIGHT:
     case LASER_TICK_LEFT:
     case BAITER:
+    case SWARMER_AIM:
+    case SWARMER:
+    case BOMBERS:
     case WAVE: return 1;
     }
     return 0;
@@ -153,6 +158,9 @@ StepResult game_step(Game *g, uint16_t proc)
     case BONUS_SHOW: return bonus_end(g, proc);
     case LASER_FIRE: return laser_fire(g, proc);
     case BAITER: return baiter_step(g, proc);
+    case SWARMER_AIM: return swarmer_step(g, proc, 1);
+    case SWARMER: return swarmer_step(g, proc, 0);
+    case BOMBERS: return bomber_step(g, proc);
     case WAVE: return wave_step(g, proc);
     case LASER_TICK_RIGHT:
     case LASER_TICK_LEFT: return laser_step(g, proc, p->resume == LASER_TICK_LEFT);

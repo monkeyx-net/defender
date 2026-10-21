@@ -13,6 +13,10 @@
  *     the bonus that follows ($EE65, $EE73, $EEB2); the wave's step ($DCEA)
  *     with random counts, timers and settings (landers, mutants and
  *     baiters arriving, the ramp); baiters ($EAB4) anywhere around the ship
+ *   - the arrivals ($EF9C landers, $EF15 mutants, $EA80 baiters, $EB36
+ *     pods, $EB9E swarmers, $F29D bombers) from random states, then the
+ *     steps of the swarmers and bombers they made, then every hit handler
+ *     on them ($F20B, $EF6D, $EB2B, $EB74, $EBE9, $F3BC)
  *   - score_add ($D360): random scores (BCD, a third of them small), points (BCD words, the pair
  *     and digit bits), players and extra-life intervals; cases that earn an
  *     extra life (not ported) are counted and skipped
@@ -25,6 +29,10 @@
 #include "emu/board.h"
 #include "sim/game.h"
 #include "sim/baiter.h"
+#include "sim/bombers.h"
+#include "sim/enemies.h"
+#include "sim/lander.h"
+#include "sim/pods.h"
 #include "sim/humanoids.h"
 #include "sim/wave.h"
 #include "sim/score.h"
@@ -47,6 +55,18 @@ static unsigned rnd(unsigned n)
 }
 
 static uint8_t bcd(void) { return (uint8_t)(rnd(10) << 4 | rnd(10)); }
+
+static int rom_call(uint16_t pc, uint16_t d);
+
+/* Run the ROM routine at `pc` with these registers until it returns. */
+static int rom_call_with(uint16_t pc, uint16_t d, uint16_t x, uint16_t y, uint16_t u)
+{
+    board.cpu.x = x;
+    board.cpu.y = y;
+    board.cpu.u = u;
+    board.cpu.dp = 0xA0;
+    return rom_call(pc, d);
+}
 
 /* Run the ROM routine at `pc` with D = `d` until it returns. */
 static int rom_call(uint16_t pc, uint16_t d)
@@ -271,6 +291,132 @@ static void test_baiter_steps(int cases)
            steps_skipped - before_skipped);
 }
 
+/* A random state for arrivals: the random generator, the scroll, the ship. */
+static void shake(void)
+{
+    for (int i = 0; i < 3; i++) model.ram[0xA0DF + i] = (uint8_t)rnd(256);
+    game_set_word(&model, 0xA020, (uint16_t)rnd(0x10000));
+    game_set_word(&model, 0xA0CC, (uint16_t)rnd(0x10000));
+    model.ram[0xA0C0] = (uint8_t)(0x2A + rnd(0xC0));
+    model.ram[0xA0BA] = rnd(4) ? 0 : 0x80;
+    model.ram[0xA0AA] = (uint8_t)rnd(256);
+}
+
+/* The ROM routine and the C one on the same state; 0 if equal. */
+static long call_case(const char *what, long n, uint16_t pc, uint16_t d, uint16_t x, uint16_t y,
+                      void (*c)(uint16_t d, uint16_t x, uint16_t y))
+{
+    store_model();
+    uint16_t u = model.processes.current;
+    if (rom_call_with(pc, d, x, y, u)) {
+        fprintf(stderr, "test_routines: %s: $%04X did not return\n", what, pc);
+        failures++;
+        return -1;
+    }
+    c(d, x, y);
+    return compare(what, n);
+}
+
+static void c_landers(uint16_t d, uint16_t x, uint16_t y) { (void)x; (void)y; lander_spawn(&model, (uint8_t)(d >> 8)); }
+static void c_mutants(uint16_t d, uint16_t x, uint16_t y) { (void)x; (void)y; mutant_spawn(&model, (uint8_t)(d >> 8)); }
+static void c_baiter(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)x; (void)y; baiter_spawn(&model); }
+static void c_pods(uint16_t d, uint16_t x, uint16_t y) { (void)x; (void)y; pod_spawn(&model, (uint8_t)(d >> 8)); }
+static void c_swarmers(uint16_t d, uint16_t x, uint16_t y) { (void)x; swarmer_spawn(&model, (uint8_t)(d >> 8), y); }
+static void c_bombers(uint16_t d, uint16_t x, uint16_t y) { (void)x; (void)y; bomber_spawn(&model, (uint8_t)(d >> 8)); }
+
+static uint16_t hit_handler;
+static int hit_result;
+static void c_hit(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)y; hit_result = enemy_hit(&model, hit_handler, x); }
+
+/* Objects on the screen list with this hit handler. */
+static int find_objects(uint16_t handler, uint16_t *out, int max)
+{
+    int n = 0;
+    for (uint16_t a = model.objects.screen; a && n < max; a = objects_at(&model.objects, a)->link)
+        if (objects_at(&model.objects, a)->hit == handler) out[n++] = a;
+    return n;
+}
+
+static long arrivals, enemy_steps, hits;
+
+static void test_enemies(int cases)
+{
+    for (int n = 0; n < cases; n++) {
+        memcpy(board.ram, game_ram, sizeof game_ram);
+        load_model();
+        shake();
+        int kind = (int)rnd(6);
+        uint8_t count = (uint8_t)(1 + rnd(kind == 5 ? 3 : 6));
+        if (kind == 0 && rnd(3) == 0) model.ram[HUMANOIDS_LEFT] = 0;
+        uint16_t from = model.objects.screen;
+        static const uint16_t pcs[6] = { 0xEF9C, 0xEF15, 0xEA80, 0xEB36, 0xEB9E, 0xF29D };
+        void (*cs[6])(uint16_t, uint16_t, uint16_t) = { c_landers, c_mutants, c_baiter, c_pods, c_swarmers, c_bombers };
+        if (call_case("arrival", n, pcs[kind], (uint16_t)(count << 8), 0, from, cs[kind]) != -1) continue;
+        arrivals++;
+        load_model();
+
+        /* the steps of what arrived */
+        for (uint16_t p = model.processes.head; p; p = processes_at(&model.processes, p)->link) {
+            uint16_t resume = processes_at(&model.processes, p)->resume;
+            if (resume != SWARMER_AIM && resume != SWARMER && resume != BOMBERS && resume != BAITER) continue;
+            Game saved = model;
+            model.ram[0xA0DF] = (uint8_t)rnd(256);
+            model.ram[0xA0E1] = (uint8_t)rnd(256);
+            model.processes.current = p;
+            if (resume == SWARMER_AIM && rnd(2)) {
+                /* the next step (new ones aim first), its shot due, heading for the ship */
+                processes_at(&model.processes, p)->resume = SWARMER;
+                Object *o = objects_at(&model.objects, game_word(&model, (uint16_t)(p + 7)));
+                game_poke(&model, (uint16_t)(p + 0xB), 1);
+                game_set_word(&model, 0xA0CC, (uint16_t)(o->x + (int16_t)o->vx * 0x40));
+                o->y = (uint16_t)((0x40 + rnd(0x90)) << 8);
+                game_set_word(&model, 0xA020, (uint16_t)(o->x - 0x1000)); /* on screen */
+                model.ram[0xA099] = (uint8_t)rnd(12);
+            }
+            if (resume == BOMBERS) {
+                /* on screen at the edges of its distance from the ship's line; a mine due */
+                static const int edges[] = { -0x21, -0x20, -0x1F, -0x11, -0x10, -0x0F, 0x0F, 0x10, 0x11, 0x1F, 0x20, 0x21 };
+                model.ram[0xA0C0] = (uint8_t)(0x50 + rnd(0x60));
+                for (int k = 7; k <= 0xB; k += 2) {
+                    Object *o = objects_at(&model.objects, game_word(&model, (uint16_t)(p + k)));
+                    if (!o || !rnd(3)) continue;
+                    o->screen = (uint16_t)(0x4000 | (uint8_t)(model.ram[0xA0C0] + edges[rnd(12)]));
+                    o->x = (uint16_t)(game_word(&model, 0xA020) + 0x1000);
+                    o->y = (uint16_t)((uint8_t)o->screen << 8);
+                }
+                if (rnd(2)) model.ram[0xA0E1] &= 0xF8;
+                model.ram[0xA099] = (uint8_t)rnd(12);
+            }
+            long before = steps_compared;
+            step_case("enemy step", n, p);
+            enemy_steps += steps_compared - before;
+            memcpy(board.ram, game_ram, 0); /* keep the board as the step left it */
+            model = saved;
+            store_model();
+        }
+
+        /* hit each kind */
+        static const uint16_t handlers[] = { 0xF20B, 0xEF6D, HIT_BAITER, HIT_POD, HIT_SWARMER, HIT_BOMBER };
+        for (int h = 0; h < 6; h++) {
+            uint16_t objs[8];
+            int k = find_objects(handlers[h], objs, 8);
+            if (!k) continue;
+            Game saved = model;
+            hit_handler = handlers[h];
+            uint16_t obj = objs[rnd((unsigned)k)];
+            if (!processes_at(&model.processes, game_word(&model, (uint16_t)(obj + 6))) && handlers[h] != HIT_POD &&
+                handlers[h] != HIT_BOMBER)
+                continue;
+            model.ram[0xA0DF] = (uint8_t)rnd(256);
+            if (call_case("hit", n, handlers[h], 0, obj, 0, c_hit) == -1 && hit_result >= 0) hits++;
+            model = saved;
+            store_model();
+        }
+    }
+    printf("test_routines: arrivals: %ld equal the ROM's; then %ld enemy steps and %ld hits equal\n", arrivals,
+           enemy_steps, hits);
+}
+
 static void test_score(int cases)
 {
     long done = 0, extra = 0;
@@ -338,6 +484,7 @@ int main(int argc, char **argv)
     test_humanoid_steps(2000);
     test_wave_steps(2000);
     test_baiter_steps(2000);
+    test_enemies(3000);
     if (failures) {
         fprintf(stderr, "test_routines: %d differences\n", failures);
         return 1;

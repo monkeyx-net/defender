@@ -5,6 +5,8 @@
  *   $EF6D a mutant: `<$A115` - 1, killed for 150 ($D4F8)
  *   $F1E0 a lander carrying a humanoid: the humanoid falls (process
  *         $F216, script $D4E9), then as $F20B
+ * and the humanoids' (humanoids.h), baiters' (baiter.h), pods' and
+ * swarmers' (pods.h) and bombers' (bombers.h).
  * A kill ($F416; $F40D leaves the block on its list): the owner process
  * ends ($D013), the block is freed, the points scored ($D360), the picture
  * erased, an explosion started, the sound script played.
