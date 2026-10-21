@@ -57,6 +57,8 @@ add_library(defender_core STATIC
   src/sim/game.c
   src/sim/shots.c
   src/sim/lander.c
+  src/sim/humanoids.c
+  src/sim/explosions.c
 )
 target_include_directories(defender_core PUBLIC src)
 target_link_libraries(defender_core PUBLIC m)

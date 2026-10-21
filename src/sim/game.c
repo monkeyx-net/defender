@@ -71,12 +71,38 @@ void game_sound(Game *g, uint16_t script)
     g->ram[SOUND_THRUST] = s.thrust;
 }
 
+#define BANK 0xA036 /* <$36: the ROM bank the code last selected */
+
+void game_send_sound(Game *g, uint8_t sound) { g->sound_sent = sound; }
+
+void game_erase_object(Game *g, uint16_t obj)
+{
+    g->ram[BANK] = 2; /* $F503 */
+    uint16_t at = game_word(g, obj + 4), picture = game_word(g, obj + 2);
+    int w = g->data[picture], h = g->data[picture + 1];
+    for (int c = 0; c < w; c++)
+        for (int r = 0; r < h; r++) game_poke(g, (uint16_t)(at + c * 0x100 + r), 0);
+}
+
+int game_kill_object(Game *g, uint16_t obj)
+{
+    if (objects_free(&g->objects, obj)) return -1;
+    game_erase_object(g, obj);
+    return 0;
+}
+
+void game_end_process(Game *g) { processes_kill(&g->processes, g->processes.current); }
+
 int game_step_ported(const Game *g, uint16_t proc)
 {
     const Process *p = processes_at((Processes *)&g->processes, proc); /* only read */
     if (!p) return 0;
     switch (p->resume) {
-    case LANDER_SEEK: return 1;
+    case LANDER_SEEK:
+    case LANDER_ALIGN:
+    case LANDER_RISE:
+    case LANDER_TOP:
+    case MUTANT: return 1;
     }
     return 0;
 }
@@ -87,6 +113,10 @@ StepResult game_step(Game *g, uint16_t proc)
     if (!p) return STEP_UNPORTED;
     switch (p->resume) {
     case LANDER_SEEK: return lander_seek(g, proc);
+    case LANDER_ALIGN: return lander_align(g, proc);
+    case LANDER_RISE: return lander_rise(g, proc);
+    case LANDER_TOP: return lander_top(g, proc);
+    case MUTANT: return mutant_step(g, proc);
     }
     return STEP_UNPORTED;
 }

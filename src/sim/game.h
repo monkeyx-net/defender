@@ -25,6 +25,7 @@ typedef struct {
     Processes processes;
     uint8_t ram[GAME_RAM];  /* bytes outside the pools */
     const uint8_t *data;    /* 64 KB, indexed by ROM address */
+    int sound_sent;         /* the last sound sent to the board ($D539), -1 for none */
 } Game;
 
 /* A RAM byte or big-endian word, wherever it is kept. */
@@ -39,6 +40,15 @@ uint8_t game_random(Game *g);
 uint8_t game_random_upto(Game *g, uint8_t n);
 /* $D54D: start the sound script at `script`. */
 void game_sound(Game *g, uint16_t script);
+
+/* $D539: send a sound number to the board (not RAM: kept for the game). */
+void game_send_sound(Game *g, uint8_t sound);
+/* $F3FE: erase an object where it was drawn (its picture's erase: w x h bytes). */
+void game_erase_object(Game *g, uint16_t obj);
+/* $F3FB: free an object ($D0C7) and erase it. 0, or -1 if it is on no list. */
+int game_kill_object(Game *g, uint16_t obj);
+/* $D00A: the current process ends. */
+void game_end_process(Game *g);
 
 typedef enum {
     STEP_UNPORTED = 0, /* the process (or the path it took) is not ported: the state is unspecified */

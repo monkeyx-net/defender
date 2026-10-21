@@ -81,7 +81,9 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   `processes.c` (the process pool: create, sleep, kill, the dispatcher's
   countdown), `game.c` (the C game's state: a model of all of RAM, the
   pools typed, the rest raw; `game_step` runs a process step in C),
-  `lander.c` (the lander's main step), `shots.c` (enemy shots);
+  `lander.c` (landers and mutants, every step), `shots.c` (enemy shots),
+  `humanoids.c` (the humanoid table, a humanoid's death),
+  `explosions.c` (starting one);
   each mirrors a ROM routine's arithmetic exactly
 - `gfx/` - draws into the framebuffer in arcade coordinates (`fb.scale` > 1 for
   HD): `fb.c`, `blit.c`, `scale.c` (Scale2x/3x, xBR), `enhance.c` (graphics
@@ -129,8 +131,9 @@ Every change keeps `ctest` green.
   calls with an IRQ or FIRQ pending and unmasked)
 - `game` - label `rom`: a C model of all of RAM follows the board's
   scripted game (writes copied); ported process steps run in C and the
-  model must equal RAM when the ROM's step yields (steps an interrupt broke
-  into: counted and reloaded). The scratch byte `<$73` and the like are RAM
+  model must equal RAM when the ROM's step yields (a step an interrupt
+  broke into must match with the interrupt's writes all before or all
+  after it). The scratch byte `<$73` and the like are RAM
   too: port the stores to them.
 - `mame_rom_map` - label `mame`: MAME's view of the main CPU's ROM (each
   bank at $C000, then $D000-$FFFF) equals `defender --dump-rom`

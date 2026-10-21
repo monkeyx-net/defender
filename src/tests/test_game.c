@@ -11,11 +11,11 @@
  *     the C value for it;
  *   - when the ROM's step yields (back at $E856), the model must equal
  *     RAM, and every byte the C step changed must have been written.
- * Interrupts run inside steps: their writes are copied as they happen. If
- * a step that an interrupt broke into differs, it is counted (the
- * interrupt may have changed what the step read) and the model is
- * reloaded from RAM; a step without an interrupt must match. Between
- * steps the model must equal RAM at every frame (a check of the copying).
+ * Interrupts run inside steps: their writes are copied as they happen. A
+ * step an interrupt broke into may then differ (the interrupt can change
+ * what the step reads); it must match RAM with the interrupt's writes
+ * either all before the C step or all after it. Between steps the model
+ * must equal RAM at every frame (a check of the copying).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,10 +35,14 @@
 static RomSet rom;
 static Board board;
 static uint8_t data[0x10000];
-static Game model, scratch;
+static Game model, scratch, before, other;
+static struct { uint16_t addr; uint8_t value; } irq_writes[8192];
+static int irq_count;
+static uint16_t step_proc;
 static uint8_t predicted[GAME_RAM], has_prediction[GAME_RAM], written[GAME_RAM];
 static int step_active, step_interrupted, irq_depth, failures;
-static long steps, steps_unported, steps_interrupted, steps_matched, frame_checks;
+static struct { uint16_t resume; long n; } by_resume[32];
+static long steps, steps_unported, steps_interrupted, steps_matched, frame_checks, steps_reordered;
 
 /* RAM outside the typed pools, compared with memcmp; the pools by byte. */
 static const struct { uint16_t from, to; } raw[] = {
@@ -50,18 +54,42 @@ static void load_model(void)
     for (unsigned a = 0; a < STACK; a++) game_poke(&model, (uint16_t)a, board.ram[a]);
 }
 
+/* The first address where `m` differs from RAM, or -1. */
+static long first_difference_of(const Game *m)
+{
+    for (size_t i = 0; i < sizeof raw / sizeof raw[0]; i++)
+        if (memcmp(m->ram + raw[i].from, board.ram + raw[i].from, (size_t)(raw[i].to - raw[i].from)))
+            for (unsigned a = raw[i].from; a < raw[i].to; a++)
+                if (m->ram[a] != board.ram[a]) return a;
+    for (unsigned a = 0xA05F; a < 0xA06F; a++)
+        if (game_peek(m, (uint16_t)a) != board.ram[a]) return a;
+    for (unsigned a = OBJECTS_FIRST; a < LARGE_FIRST + LARGES * LARGE_SIZE; a++)
+        if (game_peek(m, (uint16_t)a) >= 0 && game_peek(m, (uint16_t)a) != board.ram[a]) return a;
+    return -1;
+}
+
+static void apply_irq_writes(Game *m)
+{
+    for (int i = 0; i < irq_count; i++) game_poke(m, irq_writes[i].addr, irq_writes[i].value);
+}
+
+/* An interrupted step: does it match with the interrupt all before or all after it? */
+static int matches_reordered(uint16_t proc)
+{
+    if (irq_count == (int)(sizeof irq_writes / sizeof irq_writes[0])) return 0;
+    other = before;            /* the interrupt first */
+    apply_irq_writes(&other);
+    game_step(&other, proc);
+    if (first_difference_of(&other) < 0) return 1;
+    other = scratch;           /* the step first */
+    apply_irq_writes(&other);
+    return first_difference_of(&other) < 0;
+}
+
 /* The first address where the model differs from RAM, or -1. */
 static long first_difference(void)
 {
-    for (size_t i = 0; i < sizeof raw / sizeof raw[0]; i++)
-        if (memcmp(model.ram + raw[i].from, board.ram + raw[i].from, (size_t)(raw[i].to - raw[i].from)))
-            for (unsigned a = raw[i].from; a < raw[i].to; a++)
-                if (model.ram[a] != board.ram[a]) return a;
-    for (unsigned a = 0xA05F; a < 0xA06F; a++)
-        if (game_peek(&model, (uint16_t)a) != board.ram[a]) return a;
-    for (unsigned a = OBJECTS_FIRST; a < LARGE_FIRST + LARGES * LARGE_SIZE; a++)
-        if (game_peek(&model, (uint16_t)a) >= 0 && game_peek(&model, (uint16_t)a) != board.ram[a]) return a;
-    return -1;
+    return first_difference_of(&model);
 }
 
 static void report(long a, const char *what)
@@ -75,6 +103,15 @@ static void start_step(uint16_t proc)
 {
     if (!game_step_ported(&model, proc)) return;
     steps++;
+    before = model;
+    irq_count = 0;
+    uint16_t resume = processes_at(&model.processes, proc)->resume;
+    for (int i = 0; i < 32; i++)
+        if (by_resume[i].resume == resume || !by_resume[i].resume) {
+            by_resume[i].resume = resume;
+            by_resume[i].n++;
+            break;
+        }
     scratch = model;
     if (game_step(&scratch, proc) != STEP_DONE) {
         steps_unported++;
@@ -91,6 +128,7 @@ static void start_step(uint16_t proc)
     }
     step_active = 1;
     step_interrupted = 0;
+    step_proc = proc;
 }
 
 static void end_step(void)
@@ -104,10 +142,11 @@ static void end_step(void)
         steps_matched++;
         return;
     }
-    if (step_interrupted) {
-        steps_interrupted++;
+    if (step_interrupted && matches_reordered(step_proc)) {
+        steps_reordered++;
     } else {
-        report(diff, "after a step");
+        if (step_interrupted) steps_interrupted++;
+        report(diff, step_interrupted ? "after an interrupted step" : "after a step");
     }
     load_model();
 }
@@ -136,6 +175,11 @@ static void write_hook(Board *b, uint16_t a, uint8_t v)
     (void)b;
     if (a >= STACK || !step_active || irq_depth) {
         game_poke(&model, a, v);
+        if (step_active && a < STACK && irq_count < (int)(sizeof irq_writes / sizeof irq_writes[0])) {
+            irq_writes[irq_count].addr = a;
+            irq_writes[irq_count].value = v;
+            irq_count++;
+        }
         return;
     }
     written[a] = 1;
@@ -204,10 +248,12 @@ int main(int argc, char **argv)
             }
         }
     }
-    printf("test_game: %ld steps of ported processes run: %ld matched, %ld took paths not yet ported,\n"
-           "           %ld broken into by an interrupt and different (reloaded); %ld frames compared\n",
-           steps, steps_matched, steps_unported,
-           steps_interrupted, frame_checks);
+    printf("test_game: %ld steps of ported processes run: %ld matched, %ld matched with an interrupt's writes\n"
+           "           reordered, %ld took paths not yet ported; %ld frames compared\n",
+           steps, steps_matched, steps_reordered, steps_unported, frame_checks);
+    printf("test_game: steps by where they resume:");
+    for (int i = 0; i < 32 && by_resume[i].resume; i++) printf(" $%04X %ld", by_resume[i].resume, by_resume[i].n);
+    printf("\n");
     if (steps_matched < 100) {
         fprintf(stderr, "test_game: too few steps matched\n");
         return 1;
