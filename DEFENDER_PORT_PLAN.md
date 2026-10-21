@@ -254,11 +254,17 @@ is $A0 throughout, so `<$xx` is $A0xx.
   port with the CMOS) and leaves bank 3 selected. Every 40 steps ($DEEC,
   B = 2) the settings from $A0FB ramp: bank 7's table at [$C011]-[$C013],
   8 bytes per setting (max, min, deltas by column B), kept within. Wave
-  start ($DC1E, to port): the humanoid walker, the table cleared, the
+  start ($DC1E): the humanoid walker, the table cleared, the
   humanoids placed ($DBE1: groups of a quarter at x $00/$40/$80/$C0 high,
   the rest at random; line $E0, flags $10, picture $F901 or $F915), the
   player block's wave settings (+B on) copied to $A0FB-$A111, $A112-$A119
-  cleared, then $EB9E, $EF15 (mutants carried over), $EB36, $F29D.
+  cleared, then the enemies carried over: swarmers (`<$FF`, up to 6 at a
+  time around a spare block taken before the count is looked at, so with
+  none one block stays taken; its x's low byte is B as the ROM left it,
+  then the last spare's x), mutants (`<$FE`, $EF15, which leaves U at its
+  last process), pods (`<$FD`, $EB36: their owner word is that U, else the
+  player block + $22), bombers (`<$FC`, groups of up to 3). Ported:
+  `wave_start` in `src/sim/wave.c`, 1000 random starts equal the ROM's.
 - **Arrivals**: landers ($EF9C, ported in `lander.c`): a process
   ($EFF6) and an object (+12 $4433, handler $F20B) at x = `<$E0-<$E1`
   after a random step, line $2C, at the wave's descent ($A103), sideways

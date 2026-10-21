@@ -45,6 +45,7 @@ typedef struct {
 typedef struct {
     Process small[PROCESSES], large[LARGES];
     uint16_t head, current, free_small, free_large;
+    uint16_t last_created; /* not RAM: for code that keeps the ROM's U */
 } Processes;
 
 Process *processes_at(Processes *p, uint16_t addr);
@@ -56,6 +57,8 @@ void processes_init(Processes *p);
    current one. Returns its block, or 0 if none is free (the ROM stops
    with an error). */
 uint16_t processes_create(Processes *p, uint16_t resume, uint8_t type, int large);
+/* The block processes_create returned last. */
+uint16_t processes_last_created(const Processes *p);
 /* $D001: the current process sleeps `ticks` and resumes at `resume`. */
 void processes_sleep(Processes *p, uint8_t ticks, uint16_t resume);
 /* $D015: kill a process; returns the block before it in the list (the

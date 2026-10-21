@@ -27,7 +27,8 @@
 #define HIT_POD 0xEB74
 #define HIT_SWARMER 0xEBE9
 
-void pod_spawn(Game *g, uint8_t n);
+/* $EB36 with U = `owner` (the wave start's U: the player block + $22). */
+void pod_spawn(Game *g, uint8_t n, uint16_t owner);
 void swarmer_spawn(Game *g, uint8_t n, uint16_t from);
 StepResult swarmer_step(Game *g, uint16_t proc, int aim);
 int pod_hit(Game *g, uint16_t obj);

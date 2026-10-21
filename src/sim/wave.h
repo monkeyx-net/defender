@@ -22,6 +22,18 @@
 
 #define WAVE 0xDCEA
 
+/* $DC1E: a wave starts: the humanoid walker; the humanoids (player block
+   +A) placed in four groups at x $00/$40/$80/$C0 (more than 7) and the rest
+   at random ($DBE1: picture $F901 or $F915, line $E0, flags $10); the
+   wave's settings from the player block (+B on) to $A0FB-$A111, $A112-$A119
+   cleared; the enemies carried over: swarmers (`<$FF`, up to 6 at a time
+   from a spare block at a random place), mutants (`<$FE`), pods (`<$FD`),
+   bombers (`<$FC`, groups of up to 3). The spare block's x takes B as the
+   ROM leaves it (`b`: on entry, or from placing the humanoids, then the
+   last spare's x); with no swarmers carried over the spare stays taken.
+   The pods' owner word is U as the ROM leaves it (the player block + $22,
+   or the last mutant's process). */
+void wave_start(Game *g, uint8_t b);
 /* $DDAE */
 uint8_t wave_enemies_left(const Game *g);
 /* $DEEC: add delta column `column` of the ramp table to the settings at `settings`. */

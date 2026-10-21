@@ -20,13 +20,13 @@
 
 static uint16_t sext(uint8_t b) { return (uint16_t)(int16_t)(int8_t)b; }
 
-void pod_spawn(Game *g, uint8_t n)
+void pod_spawn(Game *g, uint8_t n, uint16_t owner)
 {
     g->ram[SCRATCH] = n;
     do {
         uint16_t obj = objects_alloc(&g->objects);
         if (!obj) return;
-        objects_setup(&g->objects, obj, g->processes.current, 0xF8F7, HIT_POD, 0xCCCC);
+        objects_setup(&g->objects, obj, owner, 0xF8F7, HIT_POD, 0xCCCC);
         Object *o = objects_at(&g->objects, obj);
         game_random(g);
         uint8_t lo = g->ram[RANDOM_LO];

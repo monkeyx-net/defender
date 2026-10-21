@@ -4,7 +4,8 @@
  * The board is booted into a game; then for each case the RAM is set up,
  * the ROM routine runs on the emulated CPU (interrupts masked) until it
  * returns, and the C routine runs on a model of the same RAM: all of RAM
- * (bar the stack page) must then be equal.
+ * (bar the stack page) must then be equal. DBG_ALL=1 lists every byte
+ * that differs, not just the first.
  *   - process steps from situations the scripted games rarely reach: the
  *     state is built in the model and copied to RAM, the ROM's step runs
  *     from its resume address until it is back at the dispatcher ($E856),
@@ -18,6 +19,8 @@
  *     steps of the swarmers and bombers they made, then every hit handler
  *     on them ($F20B, $EF6D, $EB2B, $EB74, $EBE9, $F3BC), and a smart bomb
  *     ($E8C1) on them, some on screen, some still appearing
+ *   - a wave's start ($DC1E) from random player blocks: humanoids, the
+ *     settings, swarmers, mutants, pods and bombers carried over
  *   - score_add ($D360): random scores (BCD, a third of them small), points (BCD words, the pair
  *     and digit bits), players and extra-life intervals; cases that earn an
  *     extra life (not ported) are counted and skipped
@@ -98,6 +101,15 @@ static void load_model(void)
 
 static long compare(const char *what, long n)
 {
+    if (getenv("DBG_ALL")) {
+        int k = 0;
+        for (unsigned a = 0; a < STACK && k < 12; a++)
+            if (game_peek(&model, (uint16_t)a) != board.ram[a]) {
+                unsigned off = a >= OBJECTS_FIRST && a < OBJECTS_FIRST + OBJECTS * OBJECT_SIZE ? (a - OBJECTS_FIRST) % OBJECT_SIZE : 99;
+                fprintf(stderr, "  %s %ld: $%04X (obj +%02X) = %02X, C %02X\n", what, n, a, off, board.ram[a], game_peek(&model, (uint16_t)a));
+                k++;
+            }
+    }
     for (unsigned a = 0; a < STACK; a++)
         if (game_peek(&model, (uint16_t)a) != board.ram[a]) {
             if (failures++ < 8)
@@ -322,7 +334,7 @@ static long call_case(const char *what, long n, uint16_t pc, uint16_t d, uint16_
 static void c_landers(uint16_t d, uint16_t x, uint16_t y) { (void)x; (void)y; lander_spawn(&model, (uint8_t)(d >> 8)); }
 static void c_mutants(uint16_t d, uint16_t x, uint16_t y) { (void)x; (void)y; mutant_spawn(&model, (uint8_t)(d >> 8)); }
 static void c_baiter(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)x; (void)y; baiter_spawn(&model); }
-static void c_pods(uint16_t d, uint16_t x, uint16_t y) { (void)x; (void)y; pod_spawn(&model, (uint8_t)(d >> 8)); }
+static void c_pods(uint16_t d, uint16_t x, uint16_t y) { (void)x; (void)y; pod_spawn(&model, (uint8_t)(d >> 8), model.processes.current); }
 static void c_swarmers(uint16_t d, uint16_t x, uint16_t y) { (void)x; swarmer_spawn(&model, (uint8_t)(d >> 8), y); }
 static void c_bombers(uint16_t d, uint16_t x, uint16_t y) { (void)x; (void)y; bomber_spawn(&model, (uint8_t)(d >> 8)); }
 
@@ -466,6 +478,29 @@ static void test_erase(void)
     printf("test_routines: picture erases: %ld equal the ROM's\n", done);
 }
 
+static uint8_t wave_b;
+static void c_wave_start(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)x; (void)y; wave_start(&model, wave_b); }
+
+static void test_wave_start(int cases)
+{
+    long done = 0;
+    for (int n = 0; n < cases; n++) {
+        memcpy(board.ram, game_ram, sizeof game_ram);
+        load_model();
+        shake();
+        uint16_t block = score_player(&model);
+        game_poke(&model, (uint16_t)(block + 0xA), (uint8_t)rnd(13));
+        for (int i = 0; i < 0x17; i++) game_poke(&model, (uint16_t)(block + 0xB + i), (uint8_t)rnd(16));
+        game_poke(&model, (uint16_t)(block + 0xB + 4), (uint8_t)(rnd(2) ? 0 : rnd(11))); /* swarmers */
+        game_poke(&model, (uint16_t)(block + 0xB + 3), (uint8_t)(rnd(2) ? 0 : rnd(5))); /* mutants */
+        game_poke(&model, (uint16_t)(block + 0xB + 2), (uint8_t)(rnd(2) ? 0 : rnd(5))); /* pods */
+        game_poke(&model, (uint16_t)(block + 0xB + 1), (uint8_t)(rnd(2) ? 0 : rnd(6))); /* bombers */
+        wave_b = (uint8_t)rnd(256);
+        if (call_case("wave start", n, 0xDC1E, wave_b, 0, 0, c_wave_start) == -1) done++;
+    }
+    printf("test_routines: wave starts: %ld equal the ROM's\n", done);
+}
+
 static void test_score(int cases)
 {
     long done = 0, extra = 0;
@@ -535,6 +570,7 @@ int main(int argc, char **argv)
     test_wave_steps(2000);
     test_baiter_steps(2000);
     test_enemies(3000);
+    test_wave_start(1000);
     if (failures) {
         fprintf(stderr, "test_routines: %d differences\n", failures);
         return 1;

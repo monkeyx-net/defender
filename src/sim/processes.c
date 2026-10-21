@@ -52,6 +52,7 @@ uint16_t processes_create(Processes *p, uint16_t resume, uint8_t type, int large
     b->sleep = 1;
     b->link = *after;
     *after = addr;
+    p->last_created = addr;
     return addr;
 }
 
@@ -161,3 +162,5 @@ void processes_poke(Processes *p, uint16_t addr, uint8_t value)
         b->resume = (uint16_t)(words[2] << 8 | words[3]);
     }
 }
+
+uint16_t processes_last_created(const Processes *p) { return p->last_created; }

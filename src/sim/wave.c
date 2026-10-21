@@ -1,6 +1,10 @@
 #include "sim/wave.h"
 
 #include "sim/baiter.h"
+#include "sim/bombers.h"
+#include "sim/humanoids.h"
+#include "sim/pods.h"
+#include "sim/score.h"
 #include "sim/lander.h"
 
 #define STATE 0xA0BA
@@ -15,6 +19,97 @@
 #define BAITERS_MAX 0x0C
 #define SETTINGS 0xA0FB
 #define RAMP_EVERY 0x28
+
+/* $DBE1: `n` humanoids at x high byte (random & $1F) + `base`. */
+static void place_humanoids(Game *g, uint8_t n, uint8_t base, uint16_t *slot, uint16_t owner)
+{
+    g->ram[0xA074] = n;
+    do {
+        uint16_t obj = objects_alloc(&g->objects);
+        if (!obj) return;
+        objects_setup(&g->objects, obj, owner, 0xF901, HUMANOID_ON_GROUND, 0x6666);
+        Object *o = objects_at(&g->objects, obj);
+        game_random(g);
+        uint8_t lo = g->ram[0xA0E1];
+        o->x = (uint16_t)((uint8_t)((g->ram[0xA0E0] & 0x1F) + base) << 8 | lo);
+        if (lo & 1) o->picture = 0xF915;
+        o->y = (uint16_t)(0xE0 << 8 | (o->y & 0xFF));
+        o->flags = 0x10;
+        o->vy = o->vx = 0;
+        o->owner = 0;
+        g->objects.screen = obj;
+        game_set_word(g, *slot, obj);
+        *slot = (uint16_t)(*slot + 2);
+    } while (--g->ram[0xA074]);
+}
+
+void wave_start(Game *g, uint8_t b)
+{
+    uint8_t *r = g->ram;
+    uint16_t walker = processes_create(&g->processes, HUMANOID_WALK, 0, 0);
+    if (!walker) return;
+    game_set_word(g, (uint16_t)(walker + 7), HUMANOIDS);
+    for (uint16_t a = HUMANOIDS; a < 0xA142; a++) r[a] = 0;
+    uint16_t slot = HUMANOIDS, block = game_word(g, 0xA08D);
+    uint8_t a = (uint8_t)game_peek(g, (uint16_t)(block + 0xA));
+    r[HUMANOIDS_LEFT] = a;
+    if (a) {
+        if (a > 7) {
+            uint8_t quarter = a >> 2;
+            b = 0;
+            do {
+                place_humanoids(g, quarter, b, &slot, block);
+                b = (uint8_t)(b + 0x40);
+            } while (b);
+            a = (uint8_t)(game_peek(g, (uint16_t)(block + 0xA)) - (uint8_t)(quarter << 2));
+        }
+        if (a) {
+            r[0xA073] = a;
+            do {
+                b = r[0xA0E0];
+                place_humanoids(g, 1, b, &slot, block);
+            } while (--r[0xA073]);
+        }
+    }
+    for (uint16_t x = 0xA0FB, u = (uint16_t)(block + 0xB); x != 0xA112; x++, u++) r[x] = (uint8_t)game_peek(g, u);
+    for (uint16_t x = 0xA112; x != 0xA11A; x++) r[x] = 0;
+    for (;;) {
+        /* a spare block at a random place, taken before the count is
+           looked at: with no swarmers carried over it is never given back */
+        uint16_t spare = objects_alloc(&g->objects);
+        Object *o = objects_at(&g->objects, spare);
+        if (!o) return;
+        o->y = (uint16_t)((uint8_t)((r[0xA0DF] >> 1) + 0x2A) << 8 | (o->y & 0xFF));
+        game_random(g);
+        o->x = (uint16_t)((uint16_t)((uint8_t)((r[0xA0DF] & 0x3F) + 0x80) << 8 | b) + game_word(g, 0xA020));
+        b = (uint8_t)o->x; /* ADDD leaves the sum's low byte in B */
+        if (!r[0xA0FF]) break;
+        uint8_t n = r[0xA0FF] > 6 ? 6 : r[0xA0FF];
+        swarmer_spawn(g, n, spare);
+        o->link = g->objects.free_list; /* the spare goes back */
+        g->objects.free_list = spare;
+        r[0xA0FF] = (uint8_t)(r[0xA0FF] - n);
+        if (!r[0xA0FF]) break;
+    }
+    uint16_t u = (uint16_t)(block + 0x22); /* U after copying the settings */
+    if (r[0xA0FE]) {
+        mutant_spawn(g, r[0xA0FE]);
+        r[0xA0FE] = 0;
+        u = processes_last_created(&g->processes); /* $EF19 leaves U at its last process */
+    }
+    r[0xA114] = r[0xA0FD];
+    if (r[0xA0FD]) {
+        uint8_t n = r[0xA0FD];
+        r[0xA0FD] = 0;
+        pod_spawn(g, n, u);
+    }
+    r[0xA113] = r[0xA0FC];
+    while (r[0xA0FC]) {
+        uint8_t n = r[0xA0FC] > 3 ? 3 : r[0xA0FC];
+        bomber_spawn(g, n);
+        r[0xA0FC] = (uint8_t)(r[0xA0FC] - n);
+    }
+}
 
 uint8_t wave_enemies_left(const Game *g)
 {
