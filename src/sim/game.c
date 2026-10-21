@@ -1,0 +1,92 @@
+#include "sim/game.h"
+
+#include "sim/lander.h"
+#include "sim/rng.h"
+#include "sim/sounds.h"
+
+#define RNG 0xA0DF        /* <$DF-<$E1 */
+#define SOUND_SCRIPT 0xA0B0
+#define SOUND_PRIORITY 0xA0B2
+#define SOUND_THRUST 0xA0AD
+
+int game_peek(const Game *g, uint16_t addr)
+{
+    int v = objects_peek(&g->objects, addr);
+    if (v >= 0) return v;
+    v = processes_peek(&g->processes, addr);
+    if (v >= 0) return v;
+    return addr < GAME_RAM ? g->ram[addr] : -1;
+}
+
+void game_poke(Game *g, uint16_t addr, uint8_t value)
+{
+    if (objects_peek(&g->objects, addr) >= 0) objects_poke(&g->objects, addr, value);
+    else if (processes_peek(&g->processes, addr) >= 0) processes_poke(&g->processes, addr, value);
+    else if (addr < GAME_RAM) g->ram[addr] = value;
+}
+
+uint16_t game_word(const Game *g, uint16_t addr)
+{
+    return (uint16_t)((game_peek(g, addr) & 0xFF) << 8 | (game_peek(g, (uint16_t)(addr + 1)) & 0xFF));
+}
+
+void game_set_word(Game *g, uint16_t addr, uint16_t value)
+{
+    game_poke(g, addr, (uint8_t)(value >> 8));
+    game_poke(g, (uint16_t)(addr + 1), (uint8_t)value);
+}
+
+uint8_t game_random(Game *g)
+{
+    Rng r = { g->ram[RNG], g->ram[RNG + 1], g->ram[RNG + 2] };
+    uint8_t v = rng_step(&r);
+    g->ram[RNG] = r.value;
+    g->ram[RNG + 1] = r.hi;
+    g->ram[RNG + 2] = r.lo;
+    return v;
+}
+
+uint8_t game_random_upto(Game *g, uint8_t n)
+{
+    uint8_t r = game_random(g);
+    while (r > n) r >>= 1;
+    return (uint8_t)(r + 1);
+}
+
+void game_sound(Game *g, uint16_t script)
+{
+    Sounds s = {
+        .script = g->data, /* <$B0 is an address: script + pos */
+        .pos = game_word(g, SOUND_SCRIPT),
+        .priority = g->ram[SOUND_PRIORITY],
+        .timer = g->ram[SOUND_PRIORITY + 1],
+        .repeat = g->ram[SOUND_PRIORITY + 2],
+        .thrust = g->ram[SOUND_THRUST],
+    };
+    sounds_start(&s, g->data + script);
+    game_set_word(g, SOUND_SCRIPT, (uint16_t)((s.script - g->data) + s.pos));
+    g->ram[SOUND_PRIORITY] = s.priority;
+    g->ram[SOUND_PRIORITY + 1] = s.timer;
+    g->ram[SOUND_PRIORITY + 2] = s.repeat;
+    g->ram[SOUND_THRUST] = s.thrust;
+}
+
+int game_step_ported(const Game *g, uint16_t proc)
+{
+    const Process *p = processes_at((Processes *)&g->processes, proc); /* only read */
+    if (!p) return 0;
+    switch (p->resume) {
+    case LANDER_SEEK: return 1;
+    }
+    return 0;
+}
+
+StepResult game_step(Game *g, uint16_t proc)
+{
+    Process *p = processes_at(&g->processes, proc);
+    if (!p) return STEP_UNPORTED;
+    switch (p->resume) {
+    case LANDER_SEEK: return lander_seek(g, proc);
+    }
+    return STEP_UNPORTED;
+}

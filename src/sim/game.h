@@ -1,0 +1,53 @@
+/*
+ * The C game's state: the arcade's RAM, as the ROM lays it out. The object
+ * and process pools are typed (objects.h, processes.h); every other byte is
+ * still raw (`ram`), named in the code by its address until it gets a
+ * type of its own. `data` is the read-only data the ported routines use,
+ * at the ROM addresses the assets record (sound scripts, pictures); the
+ * game fills it from assets/, the tests from the ROM set.
+ *
+ * Process steps: game_step() runs the C version of the process whose block
+ * is `proc` from where it resumes, until it sleeps or ends, as the ROM's
+ * dispatcher would ($E853 `JMP [2,U]`).
+ */
+#ifndef DEFENDER_GAME_H
+#define DEFENDER_GAME_H
+
+#include <stdint.h>
+
+#include "sim/objects.h"
+#include "sim/processes.h"
+
+#define GAME_RAM 0xC000
+
+typedef struct {
+    Objects objects;
+    Processes processes;
+    uint8_t ram[GAME_RAM];  /* bytes outside the pools */
+    const uint8_t *data;    /* 64 KB, indexed by ROM address */
+} Game;
+
+/* A RAM byte or big-endian word, wherever it is kept. */
+int game_peek(const Game *g, uint16_t addr);
+void game_poke(Game *g, uint16_t addr, uint8_t value);
+uint16_t game_word(const Game *g, uint16_t addr);
+void game_set_word(Game *g, uint16_t addr, uint16_t value);
+
+/* $D711 on <$DF-<$E1. */
+uint8_t game_random(Game *g);
+/* $DD9E: a random number 1..n+1, halving until it is at most n. */
+uint8_t game_random_upto(Game *g, uint8_t n);
+/* $D54D: start the sound script at `script`. */
+void game_sound(Game *g, uint16_t script);
+
+typedef enum {
+    STEP_UNPORTED = 0, /* the process (or the path it took) is not ported: the state is unspecified */
+    STEP_DONE = 1,     /* it slept or ended */
+} StepResult;
+
+/* 1 if the process at `proc` resumes at a ported step. */
+int game_step_ported(const Game *g, uint16_t proc);
+/* Run the process at `proc` from its resume address until it yields. */
+StepResult game_step(Game *g, uint16_t proc);
+
+#endif

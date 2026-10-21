@@ -79,7 +79,9 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   `sounds.c` (the sound sequencer: scripts, thrust sound), `objects.c`
   (the object pool and lists, in the ROM's layout and values),
   `processes.c` (the process pool: create, sleep, kill, the dispatcher's
-  countdown);
+  countdown), `game.c` (the C game's state: a model of all of RAM, the
+  pools typed, the rest raw; `game_step` runs a process step in C),
+  `lander.c` (the lander's main step), `shots.c` (enemy shots);
   each mirrors a ROM routine's arithmetic exactly
 - `gfx/` - draws into the framebuffer in arcade coordinates (`fb.scale` > 1 for
   HD): `fb.c`, `blit.c`, `scale.c` (Scale2x/3x, xBR), `enhance.c` (graphics
@@ -125,6 +127,11 @@ Every change keeps `ctest` green.
   code not yet ported resynchronise it; the board calls the step hook also
   before an instruction the CPU then puts off for an interrupt: ignore
   calls with an IRQ or FIRQ pending and unmasked)
+- `game` - label `rom`: a C model of all of RAM follows the board's
+  scripted game (writes copied); ported process steps run in C and the
+  model must equal RAM when the ROM's step yields (steps an interrupt broke
+  into: counted and reloaded). The scratch byte `<$73` and the like are RAM
+  too: port the stores to them.
 - `mame_rom_map` - label `mame`: MAME's view of the main CPU's ROM (each
   bank at $C000, then $D000-$FFFF) equals `defender --dump-rom`
 - `mame_capture` - label `mame`: runs the scripted game in
