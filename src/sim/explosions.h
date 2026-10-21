@@ -31,6 +31,18 @@
 void appear_start(Game *g, uint16_t obj);
 /* $FCCC: an explosion of object `obj` (not if off screen, or no slot). */
 void explosion_start(Game *g, uint16_t obj);
+/* $FDEF: draw the slot at `slot`: the picture's columns spread from the
+   centre (+6) by its size (+0 & $7F) and its rows in pairs 2 x size lines
+   apart, from the even data; every screen word it draws is listed down
+   from +$40 (+4 the list's start). Columns past $98 and rows past line $FF
+   are left out. Scratch: <$E4-<$F7. */
+void explosion_draw(Game *g, uint16_t slot);
+/* $FD2D, every main-loop tick: explosions grow ($AA a tick, gone past
+   $30) and follow the scroll; objects appearing count down ($100 a tick)
+   and follow their object; done (or off screen) the object gets its
+   picture back; with `<$BA` bit 2 explosions stop (not erased) and
+   appearances end. */
+void explosions_update(Game *g);
 /* $FDD5: erase what the slot at `slot` drew. */
 void explosion_erase(Game *g, uint16_t slot);
 

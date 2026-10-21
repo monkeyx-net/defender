@@ -29,6 +29,9 @@
  *     its S, not compared), forgetting it ($C29A)
  *   - the ship's collisions ($E861) among enemies, humanoids (on the ground,
  *     falling: caught) and shots placed around it
+ *   - the explosions' and appearances' tick ($FD2D, drawing by $FDEF) on
+ *     slots made by real explosions and arrivals, at random sizes and
+ *     scrolls
  *   - score_add ($D360): random scores (BCD, a third of them small), points (BCD words, the pair
  *     and digit bits), players and extra-life intervals; cases that earn an
  *     extra life (not ported) are counted and skipped
@@ -43,6 +46,7 @@
 #include "sim/baiter.h"
 #include "sim/bombers.h"
 #include "sim/enemies.h"
+#include "sim/explosions.h"
 #include "sim/lander.h"
 #include "sim/player.h"
 #include "sim/pods.h"
@@ -708,6 +712,49 @@ static void test_collisions(int cases)
     printf("test_routines: ship collisions: %ld equal the ROM's\n", done);
 }
 
+static void c_explosions(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)x; (void)y; explosions_update(&model); }
+
+static void test_explosions(int cases)
+{
+    long done = 0;
+    for (int n = 0; n < cases; n++) {
+        memcpy(board.ram, game_ram, sizeof game_ram);
+        load_model();
+        shake();
+        model.ram[0xA0BA] = rnd(10) ? 0 : 0x04;
+        lander_spawn(&model, (uint8_t)(1 + rnd(4))); /* appearances */
+        pod_spawn(&model, 1, 0);
+        for (uint16_t a = model.objects.screen; a; a = objects_at(&model.objects, a)->link) {
+            Object *o = objects_at(&model.objects, a);
+            if (rnd(2)) {
+                o->x = (uint16_t)(game_word(&model, 0xA020) + rnd(0x2800));
+                o->y = (uint16_t)((0x20 + rnd(0xD0)) << 8);
+                game_set_word(&model, 0xA0F8, (uint16_t)(rnd(0x10000)));
+                if (o->picture == 0xF8EC) o->picture = 0xF985;
+                explosion_start(&model, a);
+            }
+        }
+        for (uint16_t y = 0x9C00; y < 0xA000; y += 0x40) {
+            uint16_t w = game_word(&model, y);
+            if (w && !(w & 0x8000)) {
+                static const uint16_t pics[] = { 0xF95B, 0xF965, 0xF97B, 0xF985, 0xF9C1, 0xF8D8, 0xF951 };
+                game_set_word(&model, y, (uint16_t)(rnd(0x3100)));
+                if (rnd(2)) {
+                    game_set_word(&model, (uint16_t)(y + 2), pics[rnd(7)]); /* odd heights too */
+                    game_set_word(&model, (uint16_t)(y + 6), (uint16_t)((0x10 + rnd(0x80)) << 8 | rnd(0x100)));
+                    game_set_word(&model, (uint16_t)(y + 8), (uint16_t)(game_word(&model, (uint16_t)(y + 6)) - rnd(0x400)));
+                }
+            }
+            if (w & 0x8000) game_set_word(&model, y, (uint16_t)(0x8000 | rnd(0x8000)));
+        }
+        game_set_word(&model, 0xA022, (uint16_t)(game_word(&model, 0xA020) + rnd(0x400) - 0x200));
+        model.ram[0xA036] = 2;
+        board.bank = 2;
+        if (call_case("explosions", n, 0xFD2D, 0, 0, 0, c_explosions) == -1) done++;
+    }
+    printf("test_routines: explosions' ticks: %ld equal the ROM's\n", done);
+}
+
 static void test_score(int cases)
 {
     long done = 0, extra = 0;
@@ -782,6 +829,7 @@ int main(int argc, char **argv)
     test_irq(3000);
     test_terrain(200);
     test_collisions(3000);
+    test_explosions(3000);
     if (failures) {
         fprintf(stderr, "test_routines: %d differences\n", failures);
         return 1;

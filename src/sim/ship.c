@@ -15,7 +15,7 @@ static int32_t sext24(int32_t v)
 /* <$C7-<$C8, the velocity's top 16 bits */
 static int16_t speed(int32_t v) { return (int16_t)(uint16_t)(((uint32_t)v >> 8) & 0xFFFF); }
 
-void ship_step(Ship *s, const ShipInput *in)
+int ship_step(Ship *s, const ShipInput *in)
 {
     /* friction: -4 x speed (16 bits) into the low 16 bits, sign of -speed */
     uint16_t neg = (uint16_t)-(uint16_t)speed(s->velocity);
@@ -36,6 +36,7 @@ void ship_step(Ship *s, const ShipInput *in)
         if (!(lead_hi & 0x80)) lead_hi = lead_lo = 0;
     }
     uint16_t target = (uint16_t)((uint8_t)(base + lead_hi) << 8 | lead_lo);
+    s->lead = target;
     uint16_t diff = (uint16_t)(target - s->screen_x);
     s->slide = 0;
     if (diff && target < s->screen_x) {
@@ -62,14 +63,14 @@ void ship_step(Ship *s, const ShipInput *in)
     uint8_t line = (uint8_t)(s->y >> 8);
     int16_t vy;
     if (in->in1 & IN1_UP) {
-        if (line <= TOP) return;
+        if (line <= TOP) return 0;
         if (s->vy >= 0) vy = -0x100;
         else {
             vy = (int16_t)(s->vy - 8);
             if (vy < -0x200) vy = -0x200;
         }
     } else if (in->in0 & IN0_DOWN) {
-        if (line >= BOTTOM) return;
+        if (line >= BOTTOM) return 0;
         if (s->vy <= 0) vy = 0x100;
         else {
             vy = (int16_t)(s->vy + 8);
@@ -80,4 +81,5 @@ void ship_step(Ship *s, const ShipInput *in)
     }
     s->vy = vy;
     s->y = (uint16_t)(s->y + (uint16_t)vy);
+    return 1;
 }

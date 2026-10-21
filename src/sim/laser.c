@@ -95,9 +95,45 @@ static void store(Game *g, uint16_t proc, const Laser *l, const LaserColours *c)
     game_set_word(g, COLOUR_NEXT, c->next);
 }
 
+/* laser_tick and laser_end on the game's RAM, every write through game_poke
+   in the ROM's order (so a test can follow it). */
+static int tick_game(Game *g, Laser *l, LaserColours *c, int frozen)
+{
+    if (frozen) return 1;
+    uint16_t step = l->left ? (uint16_t)-0x100 : 0x100;
+    uint16_t x = l->head;
+    if (l->left ? x <= 0x0500 : x >= 0x9800) return 1;
+    for (int i = 0; i < 4; i++, x = (uint16_t)(x + step)) game_poke(g, x, 0x11);
+    game_poke(g, x, 0x99);
+    l->head = x;
+    if (c->next >= 0xA15F) c->next = LASER_COLOURS;
+    x = l->mid;
+    for (int i = 0; i < 3; i++, x = (uint16_t)(x + step)) game_poke(g, x, c->table[c->next++ - LASER_COLOURS]);
+    l->mid = x;
+    game_poke(g, l->tail, 0);
+    l->tail = (uint16_t)(l->tail + step);
+    return 0;
+}
+
+static void end_game(Game *g, const Laser *l)
+{
+    uint16_t x = l->tail;
+    if (l->left) {
+        do {
+            game_poke(g, x, 0);
+            x = (uint16_t)(x - 0x100);
+        } while (x >= l->head);
+    } else {
+        do {
+            game_poke(g, x, 0);
+            x = (uint16_t)(x + 0x100);
+        } while (x <= l->head);
+    }
+}
+
 static StepResult end(Game *g, const Laser *l)
 {
-    laser_end(l, g->ram);
+    end_game(g, l);
     g->ram[LASERS_OUT]--;
     game_end_process(g);
     return STEP_DONE;
@@ -108,7 +144,7 @@ StepResult laser_step(Game *g, uint16_t proc, int left)
     Laser l;
     LaserColours c;
     load(g, proc, &l, &c, left);
-    if (laser_tick(&l, &c, g->ram, g->ram[STATE] & 0x40)) return end(g, &l);
+    if (tick_game(g, &l, &c, g->ram[STATE] & 0x40)) return end(g, &l);
     store(g, proc, &l, &c);
     g->ram[BANK] = 2; /* $E5AB */
     int hit = hit_test(g, LIST_SCREEN, laser_hit_position(&l), HIT_LINE);

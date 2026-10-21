@@ -376,6 +376,48 @@ is $A0 throughout, so `<$xx` is $A0xx.
   index from the address. They keep S at `<$77-<$78` (not modelled).
   `routines` checks every picture's draw (both parities) and erase at
   every line.
+- **The frame** (ported: `src/sim/frame.c`). The interrupt comes at lines
+  0, 64, 128 and 192 (a few lines late while interrupts are masked); the
+  handler ($DF17) works at the first with the beam at or past $80 (`<$92`
+  set: the bottom half) and the first after with it above (`<$92`
+  cleared: the top half). Top half (line 0): `<$5D` + 1 (the tick), the
+  watchdog, the palette shadow `<$26-<$35` to the hardware (beam at line 8
+  or above), the coin switches ($D5FD: IN2 & $3F debounced, a new press
+  queued from the table at $F8A2), the terrain (bank 7 $C003, not with
+  `<$BA` bit 1), then with bank 2 the ship and the objects in the band
+  (`<$A2`, `<$A1`] and the objects moved ($E376). Bottom half: the sound
+  sequencer, the timers `<$7E` (set to $3C by the coin PIA's CA2 flag),
+  `<$7F`, `<$80`, `<$81`, the controls (`<$7B` IN0, `<$7C` the last, `<$7D`
+  IN1; a new press queued from $F882), the ship's motion, the stars; then
+  the beam is read again, less 8 (at most $A8), into `<$A2`, and the
+  objects and ship in (`<$A3`, `<$A2`] and the shots. The main loop's tick
+  ($E7C7, when `<$5D` is set): load shedding (ticks missed: one object
+  off screen, `<$AE` = 3), bank 2, the ship's collisions, the explosions
+  ($FD2D), a random number, the queued switches' processes started (not
+  while `<$BA` has a bit of their mask), then the dispatcher. On the board
+  the main loop is still running when the bottom half comes in about 70%
+  of frames (the top half's drawing takes much of the frame), and the
+  split `<$A2` depends on the bottom half's own cycles: the C game runs
+  top half, tick, bottom half, with the split at $90. `frame` gives the C
+  game the board's split and where in the tick its bottom half came (the
+  tick's writes below $A000 before it), and measures how long the two stay
+  identical: runs of up to 39 frames, parted by that timing (the flame's
+  colours step, a scratch byte) or by what is not ported yet.
+- **Explosions and appearances** (ported: `explosions_update`,
+  `explosion_draw` in `src/sim/explosions.c`): $FD2D, every tick, for the
+  16 slots: with `<$BA` bit 2, explosions stop (not erased) and
+  appearances end; an explosion grows $AA a tick (ended past $30, erased)
+  and follows the scroll's change in `<$22`/`<$20` & $FFC0; an appearance
+  counts down $100 a tick (done at 0, or off screen: the object gets its
+  picture back, flags & ~2), its corner and centre following the object.
+  $FDEF draws a slot: the picture's columns from the centre at size
+  (`+0 & $7F`) apart, its rows in pairs (a word each) 2 x size lines apart
+  from the first row at line $2A or below, through the unrolled code at
+  [$FF48 + rows & $FE] and an odd row by [`<$ED`]; columns past $98 and
+  rows past line $FF are left out; every word drawn is listed down from
+  +$40, and at the end the centre's word is cleared. With no pairs left,
+  the odd row depends on the carry the ROM left (from `ASL <$F5`, then
+  `CMPA #$98`).
 - **The terrain** (bank 7; ported: `src/sim/terrain.c`): its shape is
   the bit stream at $C350-$C44F, a bit per 32 world units (1 down, 0 up).
   Cursors for the screen's left edge (`<$09` byte, `<$0F` bit, `<$0D` the
@@ -566,6 +608,13 @@ Found by comparing instruction traces (`mame_emu`):
   interleaving: interrupts are masked inside). The scripted minute: 8937
   object-band draws, 8937 ship draws, 4469 star frames, 4469 shot moves,
   2495 terrain updates; the ship's collisions at each of the 4204 ticks.
+- **The C game on its own** (label `rom`): `frame` loads the C game from
+  the board's RAM at an idle frame boundary and runs both on the same
+  controls, comparing all of RAM after every frame (the board's split and
+  bottom-half position given); at least 1000 frames must match (1978 in
+  the scripted game: runs up to 39 frames, parted by timing or by
+  unported code: the attract mode, the ship's death, the player's start,
+  hyperspace).
 - **Routines on chosen inputs** (label `rom`): `routines` runs a ROM
   routine on the emulated CPU (interrupts masked) until it returns and the
   C one on a model of the same RAM; all of RAM must match. Process steps
@@ -581,7 +630,8 @@ Found by comparing instruction traces (`mame_emu`):
   steps of the swarmers, bombers and baiters made (about 2700) and every
   hit handler on them (about 5600); the ship's collisions among enemies,
   humanoids (falling, caught) and shots (3000; with bank 2 selected, as
-  the main loop does). The C model reads
+  the main loop does); the explosions' tick on real explosions and
+  arrivals at random sizes, pictures and scrolls (3000). The C model reads
   banks 1, 2, 3 and 7 for their tables (`Game.bank`).
 - **To add with the C game** (as Robotron's 3.2): the C game and the
   emulated board run the same inputs side by side and their state (objects,
@@ -604,7 +654,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
 | S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte), the sound sequencer (`sounds.c`, $D539-$D5A6), the object pool and lists (`objects.c`), the process pool and dispatcher's bookkeeping (`processes.c`) | `sim` |
-| I1 | (started 2026-10-21) The interrupt's work in C: objects, ship, stars and shots drawn (`irq.c`), the terrain (`terrain.c`) | `game` (every call in both scripted games), `routines` |
+| I1 | (started 2026-10-21) The interrupt's work in C: objects, ship, stars and shots drawn (`irq.c`), the terrain (`terrain.c`); the frame assembled (`frame.c`: both halves, the main loop's tick, the controls and coins, the explosions' tick) | `game` (every call in both scripted games), `routines` |
 | S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): the smart bomb, reverse and HUD icons (`player.c`), the background processes and the scanner (`background.c`), the wave's process and arrivals (`wave.c`), landers and mutants with their arrival (`lander.c`), baiters (`baiter.c`), pods and swarmers (`pods.c`), bombers (`bombers.c`), enemy shots (`shots.c`), humanoids walking, dying, falling, landing, carried by the ship, their bonuses (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`) | `game`, `game_hunter`, `routines` |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |

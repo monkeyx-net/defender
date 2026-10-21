@@ -26,6 +26,7 @@ typedef struct {
     uint16_t world_x;   /* <$CC: the ship in world x */
     uint16_t y;         /* <$C5, 8.8 (<$C2 is its high byte) */
     int16_t vy;         /* <$CA */
+    uint16_t lead;      /* <$93-<$94: where the ship is going on screen */
 } Ship;
 
 /* The controls as the game reads them: <$7B (IN0) and <$7D (IN1). */
@@ -34,6 +35,8 @@ typedef struct {
     int16_t thrust;     /* <$BD: the facing's acceleration */
 } ShipInput;
 
-void ship_step(Ship *s, const ShipInput *in);
+/* Returns 0 when up or down stopped it at the top or bottom (the ROM
+   returns before storing y), else 1. */
+int ship_step(Ship *s, const ShipInput *in);
 
 #endif

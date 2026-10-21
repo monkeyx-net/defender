@@ -90,7 +90,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   processes running all game: colour cycles, list sorting, shots ageing,
   the scanner), `player.c` (the ship's collisions, smart bomb, reverse,
   HUD icons, saving a wave), `irq.c` (the interrupt's drawing: objects, ship, stars, shots),
-  `terrain.c` (bank 7's terrain: heights, buffers, drawing), `hit.c` (the hit test), `enemies.c` (hit
+  `terrain.c` (bank 7's terrain: heights, buffers, drawing), `frame.c`
+  (a frame: the interrupt's halves, the main loop's tick, the controls), `hit.c` (the hit test), `enemies.c` (hit
   handlers, kills), `score.c` (scoring and the score digits); `laser.c`
   also runs the laser as a process step;
   each mirrors a ROM routine's arithmetic exactly
@@ -160,6 +161,10 @@ Every change keeps `ctest` green.
   state built in the model (copied to RAM) until the ROM's step is back at
   the dispatcher (the humanoids' steps); use it where scripted play rarely
   reaches a path, and aim cases at the edges (thresholds, clamps)
+- `frame` - label `rom`: the C game on its own (`sim/frame.h`) against the
+  board, compared after every frame; the board's band split and where its
+  bottom half came in the tick are given; runs are short (timing), at
+  least 1000 frames must match
 - `mame_rom_map` - label `mame`: MAME's view of the main CPU's ROM (each
   bank at $C000, then $D000-$FFFF) equals `defender --dump-rom`
 - `mame_capture` - label `mame`: runs the scripted game in

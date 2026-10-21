@@ -151,7 +151,7 @@ int game_kill_object(Game *g, uint16_t obj)
     return 0;
 }
 
-void game_end_process(Game *g) { processes_kill(&g->processes, g->processes.current); }
+void game_end_process(Game *g) { g->resume_from = processes_kill(&g->processes, g->processes.current); }
 
 int game_step_ported(const Game *g, uint16_t proc)
 {
@@ -204,6 +204,10 @@ StepResult game_step(Game *g, uint16_t proc)
 {
     Process *p = processes_at(&g->processes, proc);
     if (!p) return STEP_UNPORTED;
+    if (!game_step_ported(g, proc)) {
+        g->unported = p->resume;
+        return STEP_UNPORTED;
+    }
     switch (p->resume) {
     case LANDER_SEEK: return lander_seek(g, proc);
     case LANDER_ALIGN: return lander_align(g, proc);

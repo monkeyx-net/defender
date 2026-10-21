@@ -70,6 +70,7 @@ add_library(defender_core STATIC
   src/sim/player.c
   src/sim/irq.c
   src/sim/terrain.c
+  src/sim/frame.c
 )
 target_include_directories(defender_core PUBLIC src)
 target_link_libraries(defender_core PUBLIC m)
@@ -162,7 +163,10 @@ if(EXISTS "${DEFENDER_ROM}")
   add_executable(test_routines src/tests/test_routines.c)
   target_link_libraries(test_routines PRIVATE defender_core)
   add_test(NAME routines COMMAND test_routines "${DEFENDER_ROM}")
-  set_tests_properties(rom_load extract sim game game_hunter routines PROPERTIES LABELS rom)
+  add_executable(test_frame src/tests/test_frame.c)
+  target_link_libraries(test_frame PRIVATE defender_core)
+  add_test(NAME frame COMMAND test_frame "${DEFENDER_ROM}")
+  set_tests_properties(rom_load extract sim game game_hunter routines frame PROPERTIES LABELS rom)
   # Development builds extract the assets next to the program after each build.
   if(NOT CMAKE_CROSSCOMPILING)
     add_custom_command(OUTPUT "${CMAKE_BINARY_DIR}/assets/manifest.txt"

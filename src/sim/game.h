@@ -27,6 +27,21 @@ typedef struct {
     const uint8_t *data;    /* 64 KB, indexed by ROM address: the fixed ROM, bank 2 at $C000 */
     const uint8_t *bank[8]; /* 4 KB each at $C000 (banks 1, 2, 3, 7), for the tables in them */
     int sound_sent;         /* the last sound sent to the board ($D539), -1 for none */
+    /* the controls, as the PIAs give them: IN0 ($CC04), IN1 ($CC06), IN2
+       ($CC00) and the coin PIA's control register A ($CC01: bit 6, CA2) */
+    uint8_t in0, in1, in2, cra;
+    uint8_t palette[16];    /* the hardware palette ($C000-$C00F), copied at the frame's top */
+    uint16_t resume_from;   /* where the dispatcher carries on after a step */
+    /* the bottom half's band split: the ROM re-reads the beam after the
+       sounds, the ship's motion and the stars (so it depends on their
+       cycles); -1 for the usual line, or the line a test saw */
+    int split;
+    uint16_t unported;      /* the resume address of the last step not ported */
+    /* where the bottom half breaks into the main loop's tick: -1 after it
+       (the C game's order), or before the tick's write number n below
+       $A000 (as a test saw the board do); tick_writes counts them */
+    long bottom_at_write, tick_writes;
+    int bottom_failed;
     /* optional, for tests: called before each raw byte write (not the typed pools' fields) */
     void (*on_write)(void *user, uint16_t addr);
     void *user;
