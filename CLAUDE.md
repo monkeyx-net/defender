@@ -88,7 +88,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   wave's process: arrivals, baiters, the ramp), `baiter.c` (baiters), `pods.c` (pods and
   swarmers), `bombers.c` (bombers), `background.c` (the
   processes running all game: colour cycles, list sorting, shots ageing,
-  the scanner), `hit.c` (the hit test), `enemies.c` (hit
+  the scanner), `player.c` (smart bomb, reverse, HUD icons, saving a
+  wave), `hit.c` (the hit test), `enemies.c` (hit
   handlers, kills), `score.c` (scoring and the score digits); `laser.c`
   also runs the laser as a process step;
   each mirrors a ROM routine's arithmetic exactly

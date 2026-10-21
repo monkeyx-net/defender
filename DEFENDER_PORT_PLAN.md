@@ -331,14 +331,26 @@ is $A0 throughout, so `<$xx` is $A0xx.
   handler. $EEBA fires picture $F95B ($E4D9, handler $E51E) at the ship
   (`<$BF` column, `<$C0` line) with a random spread of -16..15, plus 4 x
   the ship's speed when `<$DF` > $78; speeds are the 8-bit differences x 4.
-- **Smart bomb** ($E8C1): not while one is going (`<$9A`) or with none
-  left (the player block `<$8D` +9, decremented; $D680 redraws the HUD);
-  script $D4D2. It calls the hit handler (+8) of every object on screen
-  (+4 not 0) with +14 below 2, from the list's head again after each (the
-  handler unlinks it); then inverts palette entry 0 (`<$26`, the
-  background) 4 times 2 ticks apart, waits 10 ticks, while the button is
-  held 10 more at a time, then 10 more before another bomb. Ported with
-  the objects.
+- **Smart bomb** ($E8C1, ported: `src/sim/player.c`): not while one is
+  going (`<$9A`) or with none left (the player block `<$8D` +9,
+  decremented; $D680 redraws the HUD); script $D4D2. It calls the hit
+  handler (+8) of every object on screen (+4 not 0) with +14 below 2
+  (humanoids have $10, appearing objects | 2), from the list's head again
+  after each (the handler unlinks it); then inverts palette entry 0
+  (`<$26`, the background) 4 times 2 ticks apart ($E900), waits 10 ticks,
+  while the button is held 10 more at a time ($E90C), then clears `<$9A`
+  ($E91A).
+- **HUD** (ported in `player.c`): $D629 the ships left (player block +7,
+  up to 5 icons $F9D5 6 columns apart at $0F14 / $7114 after clearing $20
+  x 6), $D680 the smart bombs (+9, up to 3 icons $F9D9 4 lines apart at
+  $291B / $8B1B after clearing 3 x $0B), both players' when `<$8C` is 2;
+  $D665 the whole HUD (to port: its frame $D6BC). $DBB6 saves the wave in
+  the player block: +A..+3C cleared, +A humanoids left, +B.. the settings
+  from $A0FB, the counts to come ($A0FB-$A100) plus those alive
+  ($A112-$A117).
+- **Erasing**: each picture's erase routine (+8 of its descriptor) clears
+  its width x height, as `game_erase_object`; the hidden picture's ($F8EC,
+  routine $D8DB) is a bare RTS (`routines` checks all of them).
 - **Sound** (ported: `src/sim/sounds.c`, checked by `sim`): $D539 sends a
   sound number B to the board as $3F then ~B & $3F, so the board plays
   command ~B & $1F (the extractor's WAV). $D54D starts a script (`<$AD`
@@ -394,7 +406,7 @@ is $A0 throughout, so `<$xx` is $A0xx.
   $D4B0 and bank 3's $C00F (to port). $D3D9 draws the 6 digits ($0F1C for
   player 1, $711C for 2), 4 columns apart, from bank 2's font ($C000
   points at '0'; $F522 copies, $F57B clears leading zeros but the last 2).
-- **Reverse** ($E897, once per press): `<$BB` = -`<$BD`; the ship turns
+- **Reverse** ($E897, once per press; ported in `player.c`): `<$BB` = -`<$BD`; the ship turns
   (`<$BD` = `<$BB`) when it is next drawn ($E237); then it waits for the
   button's release and 5 more ticks (`<$AF` meanwhile).
 - **Hyperspace** ($E91F, not while `<$BA` has bits other than 1 set):
@@ -520,7 +532,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
 | S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte), the sound sequencer (`sounds.c`, $D539-$D5A6), the object pool and lists (`objects.c`), the process pool and dispatcher's bookkeeping (`processes.c`) | `sim` |
-| S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): the background processes and the scanner (`background.c`), the wave's process and arrivals (`wave.c`), landers and mutants with their arrival (`lander.c`), baiters (`baiter.c`), pods and swarmers (`pods.c`), bombers (`bombers.c`), enemy shots (`shots.c`), humanoids walking, dying, falling, landing, carried by the ship, their bonuses (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`) | `game`, `game_hunter`, `routines` |
+| S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): the smart bomb, reverse and HUD icons (`player.c`), the background processes and the scanner (`background.c`), the wave's process and arrivals (`wave.c`), landers and mutants with their arrival (`lander.c`), baiters (`baiter.c`), pods and swarmers (`pods.c`), bombers (`bombers.c`), enemy shots (`shots.c`), humanoids walking, dying, falling, landing, carried by the ship, their bonuses (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`) | `game`, `game_hunter`, `routines` |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |

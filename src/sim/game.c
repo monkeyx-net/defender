@@ -6,6 +6,7 @@
 #include "sim/humanoids.h"
 #include "sim/lander.h"
 #include "sim/laser.h"
+#include "sim/player.h"
 #include "sim/pods.h"
 #include "sim/wave.h"
 #include "sim/rng.h"
@@ -100,6 +101,8 @@ void game_erase_object(Game *g, uint16_t obj)
 {
     g->ram[BANK] = 2; /* $F503 */
     uint16_t at = game_word(g, obj + 4), picture = game_word(g, obj + 2);
+    uint16_t erase = (uint16_t)(game_read(g, (uint16_t)(picture + 8)) << 8 | game_read(g, (uint16_t)(picture + 9)));
+    if (erase == 0xD8DB) return; /* the hidden picture's: an RTS */
     int w = game_read(g, picture), h = game_read(g, (uint16_t)(picture + 1));
     for (int c = 0; c < w; c++)
         for (int r = 0; r < h; r++) game_poke(g, (uint16_t)(at + c * 0x100 + r), 0);
@@ -149,7 +152,14 @@ int game_step_ported(const Game *g, uint16_t proc)
     case SCORE_BLINK_DRAW:
     case HOUSEKEEPING:
     case HOUSEKEEPING_2:
-    case HOUSEKEEPING_3: return 1;
+    case HOUSEKEEPING_3:
+    case SMART_BOMB:
+    case SMART_BOMB_FLASH:
+    case SMART_BOMB_HELD:
+    case SMART_BOMB_DONE:
+    case REVERSE:
+    case REVERSE_HELD:
+    case REVERSE_DONE: return 1;
     }
     return 0;
 }
@@ -187,6 +197,13 @@ StepResult game_step(Game *g, uint16_t proc)
     case HOUSEKEEPING:
     case HOUSEKEEPING_2:
     case HOUSEKEEPING_3: return background_step(g, proc, p->resume);
+    case SMART_BOMB:
+    case SMART_BOMB_FLASH:
+    case SMART_BOMB_HELD:
+    case SMART_BOMB_DONE:
+    case REVERSE:
+    case REVERSE_HELD:
+    case REVERSE_DONE: return player_step(g, proc, p->resume);
     case WAVE: return wave_step(g, proc);
     case LASER_TICK_RIGHT:
     case LASER_TICK_LEFT: return laser_step(g, proc, p->resume == LASER_TICK_LEFT);

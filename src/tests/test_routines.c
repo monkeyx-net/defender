@@ -16,7 +16,8 @@
  *   - the arrivals ($EF9C landers, $EF15 mutants, $EA80 baiters, $EB36
  *     pods, $EB9E swarmers, $F29D bombers) from random states, then the
  *     steps of the swarmers and bombers they made, then every hit handler
- *     on them ($F20B, $EF6D, $EB2B, $EB74, $EBE9, $F3BC)
+ *     on them ($F20B, $EF6D, $EB2B, $EB74, $EBE9, $F3BC), and a smart bomb
+ *     ($E8C1) on them, some on screen, some still appearing
  *   - score_add ($D360): random scores (BCD, a third of them small), points (BCD words, the pair
  *     and digit bits), players and extra-life intervals; cases that earn an
  *     extra life (not ported) are counted and skipped
@@ -32,6 +33,7 @@
 #include "sim/bombers.h"
 #include "sim/enemies.h"
 #include "sim/lander.h"
+#include "sim/player.h"
 #include "sim/pods.h"
 #include "sim/humanoids.h"
 #include "sim/wave.h"
@@ -337,7 +339,7 @@ static int find_objects(uint16_t handler, uint16_t *out, int max)
     return n;
 }
 
-static long arrivals, enemy_steps, hits;
+static long arrivals, enemy_steps, hits, bombs;
 
 static void test_enemies(int cases)
 {
@@ -395,6 +397,24 @@ static void test_enemies(int cases)
             store_model();
         }
 
+        /* a smart bomb on them: some on screen, some still appearing */
+        {
+            Game saved = model;
+            for (uint16_t a = model.objects.screen; a; a = objects_at(&model.objects, a)->link) {
+                Object *o = objects_at(&model.objects, a);
+                if (rnd(3)) o->screen = (uint16_t)(0x2000 + rnd(0x6000));
+                if (!rnd(4)) o->flags = (uint8_t)rnd(4);
+            }
+            model.ram[0xA09A] = rnd(6) ? 0 : 1;
+            game_poke(&model, (uint16_t)(score_player(&model) + 9), (uint8_t)rnd(4));
+            uint16_t p = new_process(SMART_BOMB, 0);
+            long before = steps_compared;
+            step_case("smart bomb", n, p);
+            bombs += steps_compared - before;
+            model = saved;
+            store_model();
+        }
+
         /* hit each kind */
         static const uint16_t handlers[] = { 0xF20B, 0xEF6D, HIT_BAITER, HIT_POD, HIT_SWARMER, HIT_BOMBER };
         for (int h = 0; h < 6; h++) {
@@ -413,8 +433,37 @@ static void test_enemies(int cases)
             store_model();
         }
     }
-    printf("test_routines: arrivals: %ld equal the ROM's; then %ld enemy steps and %ld hits equal\n", arrivals,
-           enemy_steps, hits);
+    printf("test_routines: arrivals: %ld equal the ROM's; then %ld enemy steps, %ld smart bombs and %ld hits equal\n",
+           arrivals, enemy_steps, bombs, hits);
+}
+
+/* Every picture's erase routine ([picture + 8]) against game_erase_object. */
+static void test_erase(void)
+{
+    long done = 0;
+    for (uint16_t pic = 0xF8CE; pic < 0xF9F1; pic++) {
+        uint16_t draw = (uint16_t)(data[pic + 6] << 8 | data[pic + 7]), erase = (uint16_t)(data[pic + 8] << 8 | data[pic + 9]);
+        if (draw < 0xD0F0 || draw >= 0xD400 || ((erase < 0xD0F0 || erase >= 0xD400) && erase != 0xD8DB)) continue;
+        for (int n = 0; n < 20; n++) {
+            memcpy(board.ram, game_ram, sizeof game_ram);
+            for (unsigned a = 0x2000; a < 0x9000; a++) board.ram[a] = (uint8_t)rnd(256); /* something to erase */
+            load_model();
+            uint16_t obj = model.objects.screen;
+            Object *o = objects_at(&model.objects, obj);
+            o->picture = pic;
+            o->screen = (uint16_t)((0x20 + rnd(0x60)) << 8 | (0x30 + rnd(0xA0)));
+            store_model();
+            if (rom_call_with(erase, o->screen, 0, pic, 0)) {
+                failures++;
+                return;
+            }
+            game_erase_object(&model, obj);
+            model.ram[0xA036] = board.ram[0xA036]; /* $F3FE selects the bank, the routine alone does not */
+            compare("erase", pic);
+            done++;
+        }
+    }
+    printf("test_routines: picture erases: %ld equal the ROM's\n", done);
 }
 
 static void test_score(int cases)
@@ -480,6 +529,7 @@ int main(int argc, char **argv)
         board_run_frame(&board, NULL);
     }
     memcpy(game_ram, board.ram, sizeof game_ram);
+    test_erase();
     test_score(5000);
     test_humanoid_steps(2000);
     test_wave_steps(2000);
