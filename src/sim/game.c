@@ -10,6 +10,7 @@
 #include "sim/lander.h"
 #include "sim/laser.h"
 #include "sim/player.h"
+#include "sim/turn.h"
 #include "sim/pods.h"
 #include "sim/wave.h"
 #include "sim/rng.h"
@@ -72,9 +73,9 @@ uint8_t game_random(Game *g)
 {
     Rng r = { g->ram[RNG], g->ram[RNG + 1], g->ram[RNG + 2] };
     uint8_t v = rng_step(&r);
-    g->ram[RNG] = r.value;
-    g->ram[RNG + 1] = r.hi;
-    g->ram[RNG + 2] = r.lo;
+    game_poke(g, RNG + 1, r.hi); /* the ROM's order: ROR <$E0, ROR <$E1, STB <$DF */
+    game_poke(g, RNG + 2, r.lo);
+    game_poke(g, RNG, r.value);
     return v;
 }
 
@@ -204,7 +205,13 @@ int game_step_ported(const Game *g, uint16_t proc)
     case COIN_3:
     case COIN_WAIT:
     case START_1:
-    case START_2: return 1;
+    case START_2:
+    case TURN:
+    case TURN_RESET:
+    case TURN_WAIT:
+    case TURN_SETUP:
+    case TURN_CLEAR:
+    case TURN_WAVE: return 1;
     }
     return 0;
 }
@@ -259,6 +266,12 @@ StepResult game_step(Game *g, uint16_t proc)
     case COIN_WAIT:
     case START_1:
     case START_2: return flow_step(g, proc, p->resume);
+    case TURN:
+    case TURN_RESET:
+    case TURN_WAIT:
+    case TURN_SETUP:
+    case TURN_CLEAR:
+    case TURN_WAVE: return turn_step(g, proc, p->resume);
     case WAVE: return wave_step(g, proc);
     case LASER_TICK_RIGHT:
     case LASER_TICK_LEFT: return laser_step(g, proc, p->resume == LASER_TICK_LEFT);

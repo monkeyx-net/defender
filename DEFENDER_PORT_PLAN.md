@@ -413,6 +413,40 @@ is $A0 throughout, so `<$xx` is $A0xx.
   for waves 1-4 (+3) into +B..; then the ramp's column 3 (wave - 4 +
   [$C497]) times, at most [$C499] (both BCD), on the current player's
   block. $F5F1 clears the playfield only (lines $2A-$FF).
+- **The text printer** (bank 2; ported: `src/sim/text.c`): $CAA7 draws a
+  message, $CAB2 erases it, $CABD / $CAC8 one character a call (the
+  typewriter), at X with U the message (a word pair: list start, end).
+  Items: a word at $8000 on points to a '/'-ended word (printed, then a
+  space); else a control code 0-8 with its byte(s): 0 / 1 the character /
+  line spacing (`<$4C` / `<$4D`, $01 / $0A), 2 / 3 the cursor column from
+  the line start / on, 4 / 5 its line, 6 the position (a word), 7 a new
+  line, 8 a glyph (drawn at D as the dispatch left it: ($10, the
+  descriptor's high byte), a ROM quirk). Characters map to the font at
+  $C5E3 as $CB29 (anything else '-'), drawn by $F522 or cleared by $F57B
+  at the cursor `<$50-<$51`, which moves on by the width and `<$4C`.
+  State: `<$3D` $FFB3 / $FFB6, `<$3F` $CAED (go on) / $CB5F (return),
+  `<$4E` the line start, `<$52` the list position (high byte 0: none in
+  progress), `<$54` the word, `<$56` the end, `<$58` a space due. $F513
+  prints a message with bank 2 selected.
+- **A player's turn** (ported: `src/sim/turn.c`): $D919 counts it
+  (bookkeeping 7, bank 3 left selected); $D91E (also after a wave or a
+  death) resets ($D7B6: the palette from $F8BE, laser colours $E69F,
+  stars $E052 (16 at random, colours stepping $11), objects $D805, bomb
+  colours $E54B, flame colours $E149 twice over), ends every other
+  process, `<$BA` = $7F, and unless it is the only process waits
+  ($D93A, 15 ticks at a time) for `<$7F` and `<$80` (the ROM tests `<$7F`
+  twice); $D942: a fresh process pool ($D7C6) with only $D950, and the
+  main loop starts again ($E7BE: the rest of the tick's pass is dropped).
+  $D950: (a cocktail table's player 2 side, IN1 bit 7: not ported) the
+  scroll 0, bank 7's terrain ($C006 heights, $C000 buffers), the
+  playfield cleared, the ship's state for a new ship, `<$8D` the player's
+  block, palette entry 5 (`<$2B`) by the wave & 7 from $DB53, a ship
+  taken (+7), the HUD, the background processes; with 2 players at the
+  game's start (`<$25`) "PLAYER ONE" / "PLAYER TWO" ($C0EF / $C0F1 at
+  $3C80) for $80 ticks; $DA1F: the playfield cleared, `<$BA` = 5 (| 2
+  without humanoids), $60 ticks; $DA32: the wave's start, `<$BA` = 0 (|
+  2), `<$25` cleared, and the process becomes the wave's ($DCD9: +7 =
+  $28, `<$A118` = [$A10F], `<$A117` = 1, then a wave step).
 - **The frame** (ported: `src/sim/frame.c`). The interrupt comes at lines
   0, 64, 128 and 192 (a few lines late while interrupts are masked); the
   handler ($DF17) works at the first with the beam at or past $80 (`<$92`

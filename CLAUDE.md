@@ -94,7 +94,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   (a frame: the interrupt's halves, the main loop's tick, the controls),
   `cmos.c` (CMOS, bookkeeping, coins and credits), `flow.c` (coins and
   the start buttons' processes, a start, a player's wave set-up, the HUD,
-  screen clears), `hit.c` (the hit test), `enemies.c` (hit
+  screen clears), `text.c` (the text printer), `turn.c` (a player's turn:
+  reset, set-up, the wave's start), `hit.c` (the hit test), `enemies.c` (hit
   handlers, kills), `score.c` (scoring and the score digits); `laser.c`
   also runs the laser as a process step;
   each mirrors a ROM routine's arithmetic exactly
@@ -153,7 +154,8 @@ Every change keeps `ctest` green.
   interrupt routines are checked per call: a model loaded from RAM runs
   the C routine and must equal RAM when the ROM's returns (bar <$77-<$78
   and <$13-<$14, where routines keep S). The scratch byte `<$73` and the like are RAM
-  too: port the stores to them. The model's `data` is the fixed ROM with
+  too: port the stores to them, and in long steps make them through
+  `game_poke` in the ROM's order (the interleaved replay counts them). The model's `data` is the fixed ROM with
   bank 2 (pictures, font) at $C000; `bank[]` holds banks 1, 2, 3 and 7
   for the tables the code reads with that bank selected.
 - `game_hunter` - label `rom`: `game` on a second scripted game (rapid

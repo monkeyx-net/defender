@@ -93,6 +93,7 @@ void game_end_process(Game *g);
 typedef enum {
     STEP_UNPORTED = 0, /* the process (or the path it took) is not ported: the state is unspecified */
     STEP_DONE = 1,     /* it slept or ended */
+    STEP_RESTART = 2,  /* it restarted the main loop ($E7BE): this tick's pass ends */
 } StepResult;
 
 /* 1 if the process at `proc` resumes at a ported step. */

@@ -234,7 +234,9 @@ int game_main_tick(Game *g)
         if (!u) break;
         if (!processes_tick(&g->processes, u)) continue;
         g->resume_from = u;
-        if (game_step(g, u) != STEP_DONE) return -1;
+        StepResult step = game_step(g, u);
+        if (step == STEP_RESTART) break;
+        if (step != STEP_DONE) return -1;
         u = g->resume_from;
     }
     g->on_write = NULL;
