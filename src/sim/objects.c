@@ -163,3 +163,12 @@ void objects_poke(Objects *o, uint16_t addr, uint8_t value)
     m[(addr - OBJECTS_FIRST) % OBJECT_SIZE] = value;
     decode(b, m);
 }
+
+void objects_load(Objects *o, const uint8_t *ram)
+{
+    for (int i = 0; i < OBJECTS; i++) decode(&o->block[i], ram + OBJECTS_FIRST + i * OBJECT_SIZE);
+    o->screen = (uint16_t)(ram[LIST_SCREEN] << 8 | ram[LIST_SCREEN + 1]);
+    o->free_list = (uint16_t)(ram[LIST_FREE] << 8 | ram[LIST_FREE + 1]);
+    o->off_screen = (uint16_t)(ram[LIST_OFF_SCREEN] << 8 | ram[LIST_OFF_SCREEN + 1]);
+    o->shots = (uint16_t)(ram[LIST_SHOTS] << 8 | ram[LIST_SHOTS + 1]);
+}

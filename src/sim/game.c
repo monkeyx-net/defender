@@ -1,5 +1,7 @@
 #include "sim/game.h"
 
+#include <string.h>
+
 #include "sim/background.h"
 #include "sim/baiter.h"
 #include "sim/bombers.h"
@@ -16,6 +18,13 @@
 #define SOUND_SCRIPT 0xA0B0
 #define SOUND_PRIORITY 0xA0B2
 #define SOUND_THRUST 0xA0AD
+
+void game_load(Game *g, const uint8_t *ram)
+{
+    memcpy(g->ram, ram, GAME_RAM);
+    objects_load(&g->objects, ram);
+    processes_load(&g->processes, ram);
+}
 
 uint8_t game_read(const Game *g, uint16_t addr)
 {
@@ -97,15 +106,42 @@ uint8_t game_terrain(const Game *g, uint16_t x) { return (uint8_t)game_peek(g, (
 
 void game_send_sound(Game *g, uint8_t sound) { g->sound_sent = sound; }
 
-void game_erase_object(Game *g, uint16_t obj)
+/* Byte r of column c of a picture h rows high at `at`. Most fixed-size
+   routines ($D0F9-$D35F) point U at (column, (line + h) & $FF) and push
+   down from it, so a picture past line $FF spills into the column before;
+   the small ones ($D1AD-$D21E) and the generic ones ($F522, $F57B) index
+   from `at` itself. */
+static uint16_t cell(uint16_t at, int c, int r, int h, uint16_t routine)
 {
-    g->ram[BANK] = 2; /* $F503 */
-    uint16_t at = game_word(g, obj + 4), picture = game_word(g, obj + 2);
+    if (routine >= 0xD0F0 && routine < 0xD400 && !(routine >= 0xD1AD && routine < 0xD21F))
+        return (uint16_t)(((((at >> 8) + c) << 8) | (uint8_t)(at + h)) - h + r);
+    return (uint16_t)(at + c * 0x100 + r);
+}
+
+void game_erase_picture(Game *g, uint16_t picture, uint16_t at)
+{
     uint16_t erase = (uint16_t)(game_read(g, (uint16_t)(picture + 8)) << 8 | game_read(g, (uint16_t)(picture + 9)));
     if (erase == 0xD8DB) return; /* the hidden picture's: an RTS */
     int w = game_read(g, picture), h = game_read(g, (uint16_t)(picture + 1));
     for (int c = 0; c < w; c++)
-        for (int r = 0; r < h; r++) game_poke(g, (uint16_t)(at + c * 0x100 + r), 0);
+        for (int r = 0; r < h; r++) game_poke(g, cell(at, c, r, h, erase), 0);
+}
+
+void game_erase_object(Game *g, uint16_t obj)
+{
+    g->ram[BANK] = 2; /* $F503 */
+    game_erase_picture(g, game_word(g, obj + 2), game_word(g, obj + 4));
+}
+
+void game_draw_picture(Game *g, uint16_t picture, uint16_t at, int odd)
+{
+    uint16_t draw = (uint16_t)(game_read(g, (uint16_t)(picture + 6)) << 8 | game_read(g, (uint16_t)(picture + 7)));
+    if (draw == 0xD8DB) return;
+    int w = game_read(g, picture), h = game_read(g, (uint16_t)(picture + 1));
+    uint16_t d = (uint16_t)(picture + (odd ? 4 : 2));
+    uint16_t src = (uint16_t)(game_read(g, d) << 8 | game_read(g, (uint16_t)(d + 1)));
+    for (int c = 0; c < w; c++)
+        for (int r = 0; r < h; r++) game_poke(g, cell(at, c, r, h, draw), game_read(g, (uint16_t)(src + c * h + r)));
 }
 
 int game_kill_object(Game *g, uint16_t obj)

@@ -89,7 +89,7 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   swarmers), `bombers.c` (bombers), `background.c` (the
   processes running all game: colour cycles, list sorting, shots ageing,
   the scanner), `player.c` (smart bomb, reverse, HUD icons, saving a
-  wave), `hit.c` (the hit test), `enemies.c` (hit
+  wave), `irq.c` (the interrupt's drawing: objects, ship, stars, shots), `hit.c` (the hit test), `enemies.c` (hit
   handlers, kills), `score.c` (scoring and the score digits); `laser.c`
   also runs the laser as a process step;
   each mirrors a ROM routine's arithmetic exactly
@@ -141,7 +141,9 @@ Every change keeps `ctest` green.
   scripted game (writes copied); ported process steps run in C and the
   model must equal RAM when the ROM's step yields (a step an interrupt
   broke into must match with the interrupt's writes all before or all
-  after it, or replayed where they fell among its raw writes). The scratch byte `<$73` and the like are RAM
+  after it, or replayed where they fell among its raw writes). Ported
+  interrupt routines are checked per call: a model loaded from RAM runs
+  the C routine and must equal RAM when the ROM's returns (bar <$77-<$78). The scratch byte `<$73` and the like are RAM
   too: port the stores to them. The model's `data` is the fixed ROM with
   bank 2 (pictures, font) at $C000; `bank[]` holds banks 1, 2, 3 and 7
   for the tables the code reads with that bank selected.

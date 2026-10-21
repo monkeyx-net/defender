@@ -64,6 +64,8 @@ void objects_move(Objects *o, uint8_t state);
 
 /* The RAM view: one byte at an address in the blocks or the list heads
    (-1 elsewhere), and a write there. */
+/* The blocks and heads from a RAM image (indexed by address). */
+void objects_load(Objects *o, const uint8_t *ram);
 int objects_peek(const Objects *o, uint16_t addr);
 void objects_poke(Objects *o, uint16_t addr, uint8_t value);
 

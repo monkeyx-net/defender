@@ -354,9 +354,36 @@ is $A0 throughout, so `<$xx` is $A0xx.
   the player block: +A..+3C cleared, +A humanoids left, +B.. the settings
   from $A0FB, the counts to come ($A0FB-$A100) plus those alive
   ($A112-$A117).
-- **Erasing**: each picture's erase routine (+8 of its descriptor) clears
-  its width x height, as `game_erase_object`; the hidden picture's ($F8EC,
-  routine $D8DB) is a bare RTS (`routines` checks all of them).
+- **Drawing and erasing** (`game_draw_picture`, `game_erase_picture`):
+  each picture's draw routine (+6 of its descriptor) copies width x height
+  bytes of its even-x data (+2), or of its odd-x data (+4) when the carry
+  is set; its erase routine (+8) clears them; the hidden picture's ($F8EC,
+  routine $D8DB) are a bare RTS. Most fixed-size routines ($D0F9-$D35F)
+  point U at (column, (line + h) & $FF) and push down, so past line $FF a
+  picture spills into the column before; $D1AD-$D21E, $F522 and $F57B
+  index from the address. They keep S at `<$77-<$78` (not modelled).
+  `routines` checks every picture's draw (both parities) and erase at
+  every line.
+- **The interrupt's routines** (ported: `src/sim/irq.c`): $E39F the
+  objects in a band of lines (bottom, top]: an object drawn there is
+  erased (+4 = 0; one drawn outside is left alone entirely), one whose line
+  is in it, on screen ($2580 units) and not past column $9C (8-bit sum
+  with its width) is drawn at ((x - scroll) << 2, line), odd x by bit 7.
+  $E213 the ship in the band: its 8 x 6 and its flame erased ($E25E,
+  $E1F0 facing right / $E1CD left), `<$BD` = `<$BB`, drawn again at
+  `<$C1-<$C2` ($F9C1 / $F9CB, odd by `<$C4` bit 7) with its flame from
+  `<$9F`'s colours ($E15C / $E19B; the full flame while thrust is held).
+  $E07E the stars: 16 at $AF9D (column, line, colour), cleared, moved at
+  half the scroll (`<$6F`; past column $9C: $00 up to $C0, else $9B) and
+  drawn masked by `<$71` ($F0 or $0F by scroll bit 6), `<$AE` of them (0:
+  256, over RAM); one star's colour + $11 & $77; on an even `<$DF` one star
+  moves to column `<$DF` (- $84 from $98 on; at exactly $A0, when the word
+  at $A0B8 is not $6245 and `<$BA` bit 7 is clear, `<$E0` is written at
+  ($A0, `<$E1`)), a random line without terrain. $E453 the shots: moved by
+  their speed and the scroll (`<$9D`), redrawn by their +12 routine ($E498
+  mines, two frames from `<$A6`; $E4D9 bombs by pixel parity from `<$A8`);
+  at line $2A or column $98 erased with +16 cleared. A shot touching the
+  ship ($E51E): 25 points, freed, $F951 exploding, script $D4E4.
 - **Sound** (ported: `src/sim/sounds.c`, checked by `sim`): $D539 sends a
   sound number B to the board as $3F then ~B & $3F, so the board plays
   command ~B & $1F (the extractor's WAV). $D54D starts a script (`<$AD`
@@ -502,6 +529,11 @@ Found by comparing instruction traces (`mame_emu`):
   paths not ported: a humanoid landing safely). Not reached yet: a lander
   leaving, the planet going, a mutant's jitter wrapping. Limit: a byte the C step does
   not write goes unnoticed when the ROM writes the value it already held.
+- **Interrupt routines** (label `rom`): `game` also checks every call of a
+  ported interrupt routine: a model loaded from RAM at the call runs the C
+  routine, and all of RAM must match when the ROM's returns (no
+  interleaving: interrupts are masked inside). The scripted minute: 8937
+  object-band draws, 8937 ship draws, 4469 star frames, 4469 shot moves.
 - **Routines on chosen inputs** (label `rom`): `routines` runs a ROM
   routine on the emulated CPU (interrupts masked) until it returns and the
   C one on a model of the same RAM; all of RAM must match. Process steps
@@ -538,6 +570,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E3 | Enhanced graphics beyond whole-frame filters (e.g. HD sprites need the game's object lists: reverse engineering) | Presets look right on devices |
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
 | S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte), the sound sequencer (`sounds.c`, $D539-$D5A6), the object pool and lists (`objects.c`), the process pool and dispatcher's bookkeeping (`processes.c`) | `sim` |
+| I1 | (started 2026-10-21) The interrupt's work in C: objects, ship, stars and shots drawn (`irq.c`) | `game` (every call in both scripted games), `routines` |
 | S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): the smart bomb, reverse and HUD icons (`player.c`), the background processes and the scanner (`background.c`), the wave's process and arrivals (`wave.c`), landers and mutants with their arrival (`lander.c`), baiters (`baiter.c`), pods and swarmers (`pods.c`), bombers (`bombers.c`), enemy shots (`shots.c`), humanoids walking, dying, falling, landing, carried by the ship, their bonuses (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`) | `game`, `game_hunter`, `routines` |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |

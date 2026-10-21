@@ -21,6 +21,9 @@
  *     ($E8C1) on them, some on screen, some still appearing
  *   - a wave's start ($DC1E) from random player blocks: humanoids, the
  *     settings, swarmers, mutants, pods and bombers carried over
+ *   - the interrupt's routines on random states: the objects in a band
+ *     ($E39F, some at the right edge), the ship and its flame ($E213),
+ *     the stars ($E07E); <$77-<$78 (the drawing routines' S) not compared
  *   - score_add ($D360): random scores (BCD, a third of them small), points (BCD words, the pair
  *     and digit bits), players and extra-life intervals; cases that earn an
  *     extra life (not ported) are counted and skipped
@@ -39,6 +42,7 @@
 #include "sim/player.h"
 #include "sim/pods.h"
 #include "sim/humanoids.h"
+#include "sim/irq.h"
 #include "sim/wave.h"
 #include "sim/score.h"
 
@@ -463,7 +467,7 @@ static void test_erase(void)
             uint16_t obj = model.objects.screen;
             Object *o = objects_at(&model.objects, obj);
             o->picture = pic;
-            o->screen = (uint16_t)((0x20 + rnd(0x60)) << 8 | (0x30 + rnd(0xA0)));
+            o->screen = (uint16_t)((0x20 + rnd(0x60)) << 8 | rnd(0x100));
             store_model();
             if (rom_call_with(erase, o->screen, 0, pic, 0)) {
                 failures++;
@@ -499,6 +503,110 @@ static void test_wave_start(int cases)
         if (call_case("wave start", n, 0xDC1E, wave_b, 0, 0, c_wave_start) == -1) done++;
     }
     printf("test_routines: wave starts: %ld equal the ROM's\n", done);
+}
+
+/* Every picture's draw routine ([picture + 6], carry = odd x) against game_draw_picture. */
+static void test_draw(void)
+{
+    long done = 0;
+    for (uint16_t pic = 0xF8CE; pic < 0xF9F1; pic++) {
+        uint16_t draw = (uint16_t)(data[pic + 6] << 8 | data[pic + 7]), erase = (uint16_t)(data[pic + 8] << 8 | data[pic + 9]);
+        if (!((draw >= 0xD0F0 && draw < 0xD400) || draw == 0xD8DB) || !((erase >= 0xD0F0 && erase < 0xD400) || erase == 0xD8DB))
+            continue;
+        for (int n = 0; n < 40; n++) {
+            memcpy(board.ram, game_ram, sizeof game_ram);
+            for (unsigned a = 0x2000; a < 0x9000; a++) board.ram[a] = (uint8_t)rnd(256);
+            load_model();
+            int odd = n & 1;
+            uint16_t at = (uint16_t)((0x20 + rnd(0x60)) << 8 | rnd(0x100));
+            board.ram[0xA036] = 2;
+            model.ram[0xA036] = 2;
+            board.cpu.cc = (uint8_t)(odd ? CC_C : 0);
+            board.bank = 2;
+            if (rom_call_with(draw, at, 0, pic, 0)) {
+                failures++;
+                return;
+            }
+            game_draw_picture(&model, pic, at, odd);
+            /* the routines keep S at <$77-<$78 (their PULS copy): scratch, not modelled */
+            game_poke(&model, 0xA077, board.ram[0xA077]);
+            game_poke(&model, 0xA078, board.ram[0xA078]);
+            compare("draw", pic);
+            done++;
+        }
+    }
+    printf("test_routines: picture draws: %ld equal the ROM's\n", done);
+}
+
+static uint8_t band_top, band_bottom;
+static void c_objects_draw(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)x; (void)y; objects_draw(&model, band_top, band_bottom); }
+static void c_ship_draw(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)x; (void)y; ship_draw(&model, band_top, band_bottom); }
+static void c_stars(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)x; (void)y; stars_draw(&model); }
+
+static long irq_case(const char *what, long n, uint16_t pc, void (*c)(uint16_t, uint16_t, uint16_t))
+{
+    store_model();
+    board.bank = 2;
+    if (rom_call_with(pc, (uint16_t)(band_top << 8 | band_bottom), 0, 0, 0)) {
+        failures++;
+        return 0;
+    }
+    c(0, 0, 0);
+    game_poke(&model, 0xA077, board.ram[0xA077]);
+    game_poke(&model, 0xA078, board.ram[0xA078]);
+    return compare(what, n) == -1;
+}
+
+static void test_irq(int cases)
+{
+    long done[3] = { 0, 0, 0 };
+    for (int n = 0; n < cases; n++) {
+        memcpy(board.ram, game_ram, sizeof game_ram);
+        load_model();
+        shake();
+        model.ram[0xA036] = 2;
+        model.ram[0xA0BA] = rnd(8) ? 0 : (uint8_t)rnd(256);
+        band_top = (uint8_t)(0x80 + rnd(0x80));
+        band_bottom = (uint8_t)rnd(0x80);
+        int kind = (int)rnd(3);
+        if (kind == 0) {
+            lander_spawn(&model, (uint8_t)(1 + rnd(5)));
+            pod_spawn(&model, (uint8_t)(1 + rnd(3)), 0);
+            for (uint16_t a = model.objects.screen; a; a = objects_at(&model.objects, a)->link) {
+                Object *o = objects_at(&model.objects, a);
+                if (!rnd(3)) o->picture = 0xF9C1; /* 8 wide: the $9C limit only bites wide pictures */
+                uint8_t w = data[o->picture];
+                int col = rnd(2) ? 0x9C - w - 1 + (int)rnd(3) : (int)rnd(0xA0);
+                o->x = (uint16_t)(game_word(&model, 0xA020) + (col << 6) + rnd(0x40));
+                o->y = (uint16_t)((rnd(0x100)) << 8 | rnd(256));
+                o->screen = rnd(2) ? 0 : (uint16_t)((0x10 + rnd(0x80)) << 8 | rnd(256));
+            }
+            done[0] += irq_case("objects draw", n, 0xE39F, c_objects_draw);
+        } else if (kind == 1) {
+            game_set_word(&model, 0xA0BF, (uint16_t)((0x10 + rnd(0x80)) << 8 | (0x30 + rnd(0xB0))));
+            game_set_word(&model, 0xA0C1, (uint16_t)((0x10 + rnd(0x80)) << 8 | (0x30 + rnd(0xB0))));
+            model.ram[0xA0C0] = (uint8_t)(band_bottom + rnd(0x100 - band_bottom));
+            model.ram[0xA0C4] = (uint8_t)rnd(256);
+            game_set_word(&model, 0xA0BD, rnd(2) ? 0x0300 : 0xFD00);
+            game_set_word(&model, 0xA0BB, rnd(2) ? 0x0300 : 0xFD00);
+            model.ram[0xA07B] = (uint8_t)rnd(256);
+            done[1] += irq_case("ship draw", n, 0xE213, c_ship_draw);
+        } else {
+            for (int i = 0; i < 16; i++) {
+                uint16_t st = (uint16_t)(0xAF9D + i * 4);
+                uint8_t col = (uint8_t)(rnd(2) ? 0x9A + rnd(0x30) : rnd(0x9C));
+                model.ram[st] = col;
+                model.ram[st + 1] = (uint8_t)(0x30 + rnd(0xB0));
+                model.ram[st + 2] = (uint8_t)rnd(256);
+            }
+            model.ram[0xA0AE] = (uint8_t)rnd(17);
+            game_set_word(&model, 0xA022, (uint16_t)(game_word(&model, 0xA020) + rnd(0x1000) - 0x800));
+            game_set_word(&model, 0xA0B8, rnd(2) ? 0x6245 : (uint16_t)rnd(0x10000));
+            done[2] += irq_case("stars", n, 0xE07E, c_stars);
+        }
+    }
+    printf("test_routines: interrupt routines: objects_draw %ld, ship_draw %ld, stars_draw %ld equal the ROM's\n",
+           done[0], done[1], done[2]);
 }
 
 static void test_score(int cases)
@@ -565,12 +673,14 @@ int main(int argc, char **argv)
     }
     memcpy(game_ram, board.ram, sizeof game_ram);
     test_erase();
+    test_draw();
     test_score(5000);
     test_humanoid_steps(2000);
     test_wave_steps(2000);
     test_baiter_steps(2000);
     test_enemies(3000);
     test_wave_start(1000);
+    test_irq(3000);
     if (failures) {
         fprintf(stderr, "test_routines: %d differences\n", failures);
         return 1;

@@ -164,3 +164,23 @@ void processes_poke(Processes *p, uint16_t addr, uint8_t value)
 }
 
 uint16_t processes_last_created(const Processes *p) { return p->last_created; }
+
+static void load_block(Process *b, const uint8_t *m, int size)
+{
+    b->link = (uint16_t)(m[0] << 8 | m[1]);
+    b->resume = (uint16_t)(m[2] << 8 | m[3]);
+    b->sleep = m[4];
+    b->type = m[5];
+    b->large = m[6];
+    for (int i = 7; i < size; i++) b->data[i - 7] = m[i];
+}
+
+void processes_load(Processes *p, const uint8_t *ram)
+{
+    for (int i = 0; i < PROCESSES; i++) load_block(&p->small[i], ram + PROCESSES_FIRST + i * PROCESS_SIZE, PROCESS_SIZE);
+    for (int i = 0; i < LARGES; i++) load_block(&p->large[i], ram + LARGE_FIRST + i * LARGE_SIZE, LARGE_SIZE);
+    p->head = (uint16_t)(ram[PROCESS_HEAD] << 8 | ram[PROCESS_HEAD + 1]);
+    p->free_small = (uint16_t)(ram[PROCESS_FREE] << 8 | ram[PROCESS_FREE + 1]);
+    p->current = (uint16_t)(ram[PROCESS_CURRENT] << 8 | ram[PROCESS_CURRENT + 1]);
+    p->free_large = (uint16_t)(ram[PROCESS_FREE_LARGE] << 8 | ram[PROCESS_FREE_LARGE + 1]);
+}

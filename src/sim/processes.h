@@ -68,6 +68,8 @@ uint16_t processes_kill(Processes *p, uint16_t addr);
    current). */
 int processes_tick(Processes *p, uint16_t addr);
 
+/* The blocks and words from a RAM image (indexed by address). */
+void processes_load(Processes *p, const uint8_t *ram);
 int processes_peek(const Processes *p, uint16_t addr);
 void processes_poke(Processes *p, uint16_t addr, uint8_t value);
 

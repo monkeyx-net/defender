@@ -19,6 +19,11 @@
  * steps (the scanner), when each interrupt's writes land in the C step
  * after as many of its raw writes as the ROM's step had made. Between steps the
  * model must equal RAM at every frame (a check of the copying).
+ * Ported interrupt routines (sim/irq.h) are checked as the interrupt calls
+ * them: a model loaded from RAM at the call runs the C routine, and all
+ * of RAM must match when the ROM's returns (bar <$77-<$78, where the
+ * drawing routines keep the stack pointer). Interrupts are masked inside
+ * them, so nothing interleaves.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,6 +32,7 @@
 #include "assets/rom.h"
 #include "emu/board.h"
 #include "sim/game.h"
+#include "sim/irq.h"
 
 #define PRIME_FRAMES 1800
 #define FRAMES 5200
@@ -42,6 +48,49 @@ static uint8_t data[0x10000];
 static Game model, scratch, before, other;
 static struct { uint16_t addr; uint8_t value; } irq_writes[8192];
 static int irq_count;
+static int failures; /* (also declared below) */
+static Game irq_model;
+static int irq_call = -1;          /* the ported interrupt routine running, or -1 */
+static uint16_t irq_ret, irq_sp;
+static long irq_calls[4], irq_matched[4];
+static const struct { uint16_t pc; const char *name; } irq_routines[4] = {
+    { 0xE39F, "objects_draw" }, { 0xE213, "ship_draw" }, { 0xE07E, "stars_draw" }, { 0xE453, "shots_move" },
+};
+
+static void irq_routine_start(int i, Board *b)
+{
+    game_load(&irq_model, b->ram);
+    int r = 0;
+    switch (i) {
+    case 0: r = objects_draw(&irq_model, b->cpu.a, b->cpu.b); break;
+    case 1: ship_draw(&irq_model, b->cpu.a, b->cpu.b); break;
+    case 2: stars_draw(&irq_model); break;
+    case 3: r = shots_move(&irq_model); break;
+    }
+    irq_calls[i]++;
+    if (r) return; /* not ported */
+    irq_call = i;
+    irq_ret = (uint16_t)(b->ram[b->cpu.s] << 8 | b->ram[(uint16_t)(b->cpu.s + 1)]);
+    irq_sp = (uint16_t)(b->cpu.s + 2);
+}
+
+static long first_difference_of(const Game *m);
+
+static void irq_routine_end(void)
+{
+    int i = irq_call;
+    irq_call = -1;
+    irq_model.ram[0xA077] = board.ram[0xA077]; /* the drawing routines' S */
+    irq_model.ram[0xA078] = board.ram[0xA078];
+    long a = first_difference_of(&irq_model);
+    if (a >= 0) {
+        if (failures++ < 8)
+            fprintf(stderr, "test_game: frame %lld: %s: $%04lX = %02X, C %02X\n", (long long)board.frame,
+                    irq_routines[i].name, a, board.ram[a], game_peek(&irq_model, (uint16_t)a));
+        return;
+    }
+    irq_matched[i]++;
+}
 static uint32_t step_seq[STACK], irq_seq[STACK], seq; /* when each byte was last written */
 static uint16_t step_proc;
 /* where each interrupt fell in the step: the ROM step's raw writes before it, and its writes */
@@ -247,7 +296,13 @@ static void step_hook(Board *b)
         irq_depth--;
         return;
     }
-    if (irq_depth) return;
+    if (irq_depth) {
+        if (irq_call >= 0 && pc == irq_ret && b->cpu.s == irq_sp) irq_routine_end();
+        if (irq_call < 0)
+            for (int i = 0; i < 4; i++)
+                if (pc == irq_routines[i].pc) irq_routine_start(i, b);
+        return;
+    }
     if (pc == DISPATCH && !step_active) start_step(b->cpu.u);
     else if (pc == DISPATCH_NEXT && step_active) end_step();
 }
@@ -334,10 +389,11 @@ int main(int argc, char **argv)
        and the font) at $C000, as the drawing routines select it */
     for (unsigned a = 0xD000; a <= 0xFFFF; a++) data[a] = (uint8_t)rom_byte(&rom, a);
     for (unsigned a = 0xC000; a < 0xD000; a++) data[a] = (uint8_t)rom_bank_byte(&rom, 2, a - 0xC000);
+    irq_model.data = data;
     static uint8_t banks[8][0x1000];
     for (int b = 1; b <= 7; b++)
         for (unsigned a = 0; a < 0x1000; a++) banks[b][a] = (uint8_t)rom_bank_byte(&rom, b, a);
-    for (int b = 1; b <= 7; b++) model.bank[b] = banks[b];
+    for (int b = 1; b <= 7; b++) model.bank[b] = irq_model.bank[b] = banks[b];
     model.data = scratch.data = data;
     for (int b = 1; b <= 7; b++) scratch.bank[b] = model.bank[b];
     static uint8_t cmos[BOARD_CMOS_SIZE];
@@ -363,6 +419,9 @@ int main(int argc, char **argv)
     printf("test_game: %ld steps of ported processes run: %ld matched, %ld matched with an interrupt's writes\n"
            "           reordered, %ld took paths not yet ported; %ld frames compared\n",
            steps, steps_matched, steps_reordered, steps_unported, frame_checks);
+    printf("test_game: interrupt routines:");
+    for (int i = 0; i < 4; i++) printf(" %s %ld/%ld", irq_routines[i].name, irq_matched[i], irq_calls[i]);
+    printf(" matched\n");
     printf("test_game: hit handlers the ROM ran: lander %ld (with the carrying one's), mutant %ld, carrying lander %ld\n",
            handler_calls[0], handler_calls[1], handler_calls[2]);
     printf("test_game: steps by where they resume:");

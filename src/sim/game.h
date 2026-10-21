@@ -32,6 +32,8 @@ typedef struct {
     void *user;
 } Game;
 
+/* The whole state from a RAM image of $0000-$BFFF. */
+void game_load(Game *g, const uint8_t *ram);
 /* A byte as the main CPU reads it: RAM below $C000, `data` above. */
 uint8_t game_read(const Game *g, uint16_t addr);
 /* A byte of ROM bank `bank` at $C000-$CFFF (or the fixed ROM above). */
@@ -53,6 +55,16 @@ void game_sound(Game *g, uint16_t script);
 uint8_t game_terrain(const Game *g, uint16_t x);
 /* $D539: send a sound number to the board (not RAM: kept for the game). */
 void game_send_sound(Game *g, uint8_t sound);
+/* A picture's draw routine (descriptor +6): its even-x data (+2) or, for
+   an odd x, its odd-x data (+4), width x height bytes at `at`. The hidden
+   picture's ($F8EC, routine $D8DB) draws nothing. The ROM's routines also
+   keep the stack pointer at <$77-<$78 while they copy: not modelled. Past
+   line $FF most fixed-size routines spill into the column before (see
+   cell() in game.c). */
+void game_draw_picture(Game *g, uint16_t picture, uint16_t at, int odd);
+/* A picture's erase routine (+8) at `at`: zeros over width x height (the
+   hidden picture's erases nothing). */
+void game_erase_picture(Game *g, uint16_t picture, uint16_t at);
 /* $F3FE: erase an object where it was drawn (its picture's erase: w x h bytes). */
 void game_erase_object(Game *g, uint16_t obj);
 /* $F3FB: free an object ($D0C7) and erase it. 0, or -1 if it is on no list. */
