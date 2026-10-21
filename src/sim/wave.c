@@ -1,6 +1,9 @@
 #include "sim/wave.h"
 
 #include "sim/baiter.h"
+#include "sim/death.h"
+#include "sim/flow.h"
+#include "sim/player.h"
 #include "sim/bombers.h"
 #include "sim/humanoids.h"
 #include "sim/pods.h"
@@ -141,7 +144,12 @@ StepResult wave_step(Game *g, uint16_t proc)
     uint8_t *r = g->ram;
     if (!(r[STATE] & 0x08)) {
         uint8_t left = wave_enemies_left(g);
-        if (!left) return STEP_UNPORTED; /* the wave is over */
+        if (!left) { /* the wave is over */
+            r[STATE] = 0x77;
+            kill_others(g);
+            wave_save(g);
+            return wave_end(g, proc, 0xDD02);
+        }
         if (left <= 8) {
             uint8_t b = r[BAITER_EVERY] >> 1;
             if (left <= 3) b >>= 1;

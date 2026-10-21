@@ -23,6 +23,10 @@
 
 /* 1 when the message is done, 0 after one character (one_char). */
 int text_print(Game *g, uint16_t at, uint16_t message, int erase, int one_char);
+/* Bank 2 $CBC1 ($C00E): the BCD number `n` (leading zeros left out, 0 as
+   "0") at `at`, through the font and the spacing `<$4C`; `<$59` keeps the
+   digits still to print ($FFFF: none in progress). Returns the cursor. */
+uint16_t number_print(Game *g, uint16_t at, uint16_t n);
 /* $F522 / $F57B: a glyph (or any 4-byte descriptor) copied / cleared at `at`. */
 void glyph_draw(Game *g, uint16_t desc, uint16_t at);
 void glyph_clear(Game *g, uint16_t desc, uint16_t at);

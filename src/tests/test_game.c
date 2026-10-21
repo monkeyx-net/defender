@@ -127,7 +127,7 @@ static int raw_address(uint16_t a)
 }
 static uint8_t predicted[GAME_RAM], has_prediction[GAME_RAM], written[GAME_RAM];
 static int step_active, step_interrupted, irq_depth, failures;
-static struct { uint16_t resume; long n; } by_resume[32];
+static struct { uint16_t resume; long n; } by_resume[64];
 static long handler_calls[3]; /* the ROM's $F20B, $EF6D, $F1E0 */
 static long steps_raced;
 static long steps, steps_unported, steps_interrupted, steps_matched, frame_checks, steps_reordered;
@@ -257,7 +257,7 @@ static void start_step(uint16_t proc, int kind)
     memset(irq_seq, 0, sizeof irq_seq);
     seq = 0;
     uint16_t resume = kind == KIND_STEP ? processes_at(&model.processes, proc)->resume : 0xE861;
-    for (int i = 0; i < 32; i++)
+    for (int i = 0; i < 64; i++)
         if (by_resume[i].resume == resume || !by_resume[i].resume) {
             by_resume[i].resume = resume;
             by_resume[i].n++;
@@ -497,7 +497,7 @@ int main(int argc, char **argv)
     printf("test_game: hit handlers the ROM ran: lander %ld (with the carrying one's), mutant %ld, carrying lander %ld\n",
            handler_calls[0], handler_calls[1], handler_calls[2]);
     printf("test_game: steps by where they resume:");
-    for (int i = 0; i < 32 && by_resume[i].resume; i++) printf(" $%04X %ld", by_resume[i].resume, by_resume[i].n);
+    for (int i = 0; i < 64 && by_resume[i].resume; i++) printf(" $%04X %ld", by_resume[i].resume, by_resume[i].n);
     printf("\n");
     if (steps_matched < 100) {
         fprintf(stderr, "test_game: too few steps matched\n");

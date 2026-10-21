@@ -141,3 +141,24 @@ int text_print(Game *g, uint16_t at, uint16_t message, int erase, int one_char)
         continue;
     }
 }
+
+static uint16_t shift_digit(uint16_t d) { return (uint16_t)(d << 4 | 0x000F); }
+
+uint16_t number_print(Game *g, uint16_t at, uint16_t n)
+{
+    SW(0x3D, DRAW);
+    SW(0x3F, 0xCC0F);
+    if (W(0x59) == 0xFFFF) {
+        SW(0x50, at);
+        if (!n) n = 0x0FFF;
+        else
+            while (!(n & 0xF000)) n = shift_digit(n);
+        SW(0x59, n);
+    }
+    for (uint16_t d = W(0x59); (d & 0xF000) != 0xF000;) {
+        put_glyph(g, (uint16_t)(0xC5FB + (d >> 12) * 4));
+        d = shift_digit(W(0x59));
+        SW(0x59, d);
+    }
+    return W(0x50);
+}

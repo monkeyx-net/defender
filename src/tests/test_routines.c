@@ -35,6 +35,11 @@
  *   - coins (bank 3 $CC2C / $CC26 / $CC20), a player's wave set-up ($DE7C)
  *     and a start ($D861) with random operator settings in CMOS (CMOS
  *     compared too)
+ *   - sequences of steps followed to their end, one step at a time (ROM and
+ *     C from the same state each step): a wave's end ($DCEA with no enemy
+ *     left, the bonus, the next wave) and a death ($DA46: the flash, the
+ *     explosion through banked sleeps, the next player or game over), with
+ *     random humanoids, waves, players and ships left
  *   - score_add ($D360): random scores (BCD, a third of them small), points (BCD words, the pair
  *     and digit bits), players and extra-life intervals; cases that earn an
  *     extra life (not ported) are counted and skipped
@@ -50,6 +55,8 @@
 #include "sim/bombers.h"
 #include "sim/enemies.h"
 #include "sim/cmos.h"
+#include "sim/death.h"
+#include "sim/turn.h"
 #include "sim/explosions.h"
 #include "sim/flow.h"
 #include "sim/lander.h"
@@ -170,7 +177,7 @@ static int rom_step(uint16_t proc)
     c->dp = 0xA0;
     c->pc = (uint16_t)(board.ram[proc + 2] << 8 | board.ram[proc + 3]);
     for (long n = 0; n < 1000000; n++) {
-        if (c->pc == DISPATCH_NEXT) return 0;
+        if (c->pc == DISPATCH_NEXT || c->pc == 0xE7BE) return 0; /* the dispatcher, or the main loop restarted */
         m6809_step(c);
     }
     return -1;
@@ -837,6 +844,59 @@ static void test_flow(int cases)
            starts);
 }
 
+/* Follow process `proc` step by step while its steps are ported. */
+static long follow(const char *what, long n, uint16_t proc, int max)
+{
+    long done = 0;
+    for (int k = 0; k < max; k++) {
+        Process *p = processes_at(&model.processes, proc);
+        if (!p || !game_step_ported(&model, proc)) break;
+        if (p->resume == BANKED_RESUME && !(game_peek(&model, (uint16_t)(proc + 0xC)) == 7)) break;
+        model.processes.current = proc;
+        p->sleep = 1;
+        long before = steps_compared;
+        step_case(what, n, proc);
+        if (steps_compared == before) break;
+        done++;
+        load_model(); /* go on from the ROM's state */
+        model.processes.current = proc;
+    }
+    return done;
+}
+
+static void test_sequences(int cases)
+{
+    long waves = 0, deaths = 0;
+    for (int n = 0; n < cases; n++) {
+        memcpy(board.ram, game_ram, sizeof game_ram);
+        load_model();
+        uint8_t *r = model.ram;
+        uint16_t block = score_player(&model);
+        game_set_word(&model, 0xA08D, block);
+        game_poke(&model, (uint16_t)(block + 8), (uint8_t)(1 + rnd(12)));
+        game_poke(&model, (uint16_t)(block + 7), (uint8_t)rnd(3));
+        r[0xA08C] = (uint8_t)(1 + rnd(2));
+        game_poke(&model, (uint16_t)(PLAYER_TWO + 7), (uint8_t)rnd(3));
+        r[0xA059] = 0xFF; /* no number being printed */
+        r[0xA05A] = 0xFF;
+        r[0xA052] = 0;
+        if (rnd(2)) {
+            /* a wave's end: no enemy left */
+            r[0xA0FA] = (uint8_t)rnd(11);
+            for (uint16_t a = 0xA112; a < 0xA117; a++) r[a] = 0;
+            r[0xA0FB] = r[0xA0FE] = 0;
+            r[0xA0BA] = 0;
+            uint16_t p = new_process(WAVE, 0);
+            game_poke(&model, (uint16_t)(p + 7), 0x28);
+            waves += follow("wave end", n, p, 40);
+        } else {
+            uint16_t p = new_process(DEATH, 0);
+            deaths += follow("death", n, p, 200);
+        }
+    }
+    printf("test_routines: sequences: %ld wave-end and %ld death steps equal the ROM's\n", waves, deaths);
+}
+
 static void test_score(int cases)
 {
     long done = 0, extra = 0;
@@ -913,6 +973,7 @@ int main(int argc, char **argv)
     test_collisions(3000);
     test_explosions(3000);
     test_flow(2000);
+    test_sequences(200);
     if (failures) {
         fprintf(stderr, "test_routines: %d differences\n", failures);
         return 1;

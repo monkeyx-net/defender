@@ -95,7 +95,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   `cmos.c` (CMOS, bookkeeping, coins and credits), `flow.c` (coins and
   the start buttons' processes, a start, a player's wave set-up, the HUD,
   screen clears), `text.c` (the text printer), `turn.c` (a player's turn:
-  reset, set-up, the wave's start), `hit.c` (the hit test), `enemies.c` (hit
+  reset, set-up, the wave's start), `death.c` (hyperspace, a death and
+  its explosion, a wave's end, the next player, game over), `hit.c` (the hit test), `enemies.c` (hit
   handlers, kills), `score.c` (scoring and the score digits); `laser.c`
   also runs the laser as a process step;
   each mirrors a ROM routine's arithmetic exactly
@@ -164,7 +165,9 @@ Every change keeps `ctest` green.
   chosen RAM and registers until they return, against the C ones on the
   same RAM (`score_add`, 5000 random cases), and process steps from a
   state built in the model (copied to RAM) until the ROM's step is back at
-  the dispatcher (the humanoids' steps); use it where scripted play rarely
+  the dispatcher or the main loop's restart at $E7BE (the humanoids'
+  steps), and sequences of steps followed from one state (200 wave ends
+  and deaths); use it where scripted play rarely
   reaches a path, and aim cases at the edges (thresholds, clamps)
 - `frame` - label `rom`: the C game on its own (`sim/frame.h`) against the
   board, compared after every frame; the board's band split and where its

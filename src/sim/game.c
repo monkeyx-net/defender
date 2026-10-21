@@ -5,6 +5,7 @@
 #include "sim/background.h"
 #include "sim/baiter.h"
 #include "sim/bombers.h"
+#include "sim/death.h"
 #include "sim/flow.h"
 #include "sim/humanoids.h"
 #include "sim/lander.h"
@@ -211,7 +212,18 @@ int game_step_ported(const Game *g, uint16_t proc)
     case TURN_WAIT:
     case TURN_SETUP:
     case TURN_CLEAR:
-    case TURN_WAVE: return 1;
+    case TURN_WAVE:
+    case HYPERSPACE:
+    case HYPERSPACE_JUMP:
+    case HYPERSPACE_DONE:
+    case DEATH:
+    case DEATH_ERASE:
+    case DEATH_DRAW:
+    case DEATH_WHITE:
+    case BANKED_RESUME:
+    case DEATH_NEXT:
+    case WAVE_END_BONUS:
+    case WAVE_END_DONE: return 1;
     }
     return 0;
 }
@@ -272,6 +284,17 @@ StepResult game_step(Game *g, uint16_t proc)
     case TURN_SETUP:
     case TURN_CLEAR:
     case TURN_WAVE: return turn_step(g, proc, p->resume);
+    case HYPERSPACE:
+    case HYPERSPACE_JUMP:
+    case HYPERSPACE_DONE:
+    case DEATH:
+    case DEATH_ERASE:
+    case DEATH_DRAW:
+    case DEATH_WHITE:
+    case BANKED_RESUME:
+    case DEATH_NEXT:
+    case WAVE_END_BONUS:
+    case WAVE_END_DONE: return death_step(g, proc, p->resume);
     case WAVE: return wave_step(g, proc);
     case LASER_TICK_RIGHT:
     case LASER_TICK_LEFT: return laser_step(g, proc, p->resume == LASER_TICK_LEFT);

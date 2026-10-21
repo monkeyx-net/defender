@@ -447,6 +447,37 @@ is $A0 throughout, so `<$xx` is $A0xx.
   without humanoids), $60 ticks; $DA32: the wave's start, `<$BA` = 0 (|
   2), `<$25` cleared, and the process becomes the wave's ($DCD9: +7 =
   $28, `<$A118` = [$A10F], `<$A117` = 1, then a wave step).
+- **Hyperspace, a death, a wave's end, game over** (ported:
+  `src/sim/death.c`). $E91F (hyperspace, only with `<$BA` & $FD clear):
+  `<$BA` = $77, the playfield cleared, 15 ticks; $E936: the shots freed,
+  the scroll `<$20`/`<$22` = the random word `<$DF`, facing by its bit 0
+  (screen x $2000 / $7000, speed $0300 / $FD00), line `<$E0` / 2 + $2A,
+  bank 7's terrain, `<$BA` = $50, a ship object ($F9C1 or $F9CB, handler
+  $EDBC, +6 the U the terrain code left) appearing, $28 ticks; $E9AC: it
+  is killed, `<$BA` = 0, and with `<$E1` > $C0 the ship dies. $DA46 (a
+  death): `<$BA` = $58, the ship erased, the wave saved, sound $D4B5, a
+  white copy of the ship ($DB5C, at $AFDD) flashed with the colours at
+  $DB4B into `<$31` (2 ticks each), then `<$BA` = $7F, a white screen
+  (`<$26` = $FF) for 2 ticks; $DAB8: every other process ended, bank 7's
+  explosion ($C5D0: 128 particles at $B300, 10 bytes each, velocities
+  from two 16-bit LFSRs at `<$04`/`<$06`, feedback bit 1, kept within
+  $16A; $C649 moves and draws them each tick, fading by the table at
+  $C6AB into `<$31` until it reads 0), resumed through $F4BE / $F4CC (a
+  sleep that keeps the bank at +C and the address at +D). $DAC9: the
+  scores, sound $13; no enemies left: the wave's end; then the next player
+  with ships ($DB15, `<$25` + 1, their turn); when the player has none
+  left but the other has, $C0EF / $C0F1 and $C075 for $60 ticks, else game
+  over ($DB2C: `<$BA` = $FF, $C075, $28 ticks, $DB48 the attract mode:
+  not ported). $DDEC (a wave's end, from the wave's step at $DD02 or a
+  death at $DADB): the messages $C0F9, the wave's number (by $CBC1, BCD
+  by DAA: it wraps at 100), $C0FB, $C0F3 and the wave (at most 5), then
+  per humanoid left (`<$FA`) a glyph $F915, $0400 apart and 4 ticks
+  apart ($DE66), each scoring $0100 | wave (at most 5) << 4; then the next wave set up ($DE7C) and $80 ticks
+  ($DE79): from the wave, the player's ships + 1 and a new turn; from a
+  death, the playfield cleared and the next player.
+- **The number printer** (bank 2, `src/sim/text.c`): $CBC1 prints the
+  BCD digits of D at X, leading zeros dropped (0 prints "0"), a digit
+  per call through `<$59` like the typewriter.
 - **The frame** (ported: `src/sim/frame.c`). The interrupt comes at lines
   0, 64, 128 and 192 (a few lines late while interrupts are masked); the
   handler ($DF17) works at the first with the beam at or past $80 (`<$92`
@@ -728,7 +759,7 @@ Found by comparing instruction traces (`mame_emu`):
 | E4 | Release: packages, PortMaster submission, GitHub release | Published |
 | S0 | (started 2026-10-20) The C game's first pieces in `src/sim/`, each checked in process against the board as the ROM runs: the random generator (`rng.c`, $D711), the ship's motion (`ship.c`, $E263), the laser (`laser.c`, $E591-$E6B9; drawn into video RAM laid out as the arcade's, so the screen can be compared byte for byte), the sound sequencer (`sounds.c`, $D539-$D5A6), the object pool and lists (`objects.c`), the process pool and dispatcher's bookkeeping (`processes.c`) | `sim` |
 | I1 | (started 2026-10-21) The interrupt's work in C: objects, ship, stars and shots drawn (`irq.c`), the terrain (`terrain.c`); the frame assembled (`frame.c`: both halves, the main loop's tick, the controls and coins, the explosions' tick) | `game` (every call in both scripted games), `routines` |
-| S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): the smart bomb, reverse and HUD icons (`player.c`), the background processes and the scanner (`background.c`), the wave's process and arrivals (`wave.c`), landers and mutants with their arrival (`lander.c`), baiters (`baiter.c`), pods and swarmers (`pods.c`), bombers (`bombers.c`), enemy shots (`shots.c`), humanoids walking, dying, falling, landing, carried by the ship, their bonuses (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`) | `game`, `game_hunter`, `routines` |
+| S1 | (started 2026-10-21) Process steps in C on a model of all of RAM (`src/sim/game.c`): the smart bomb, reverse and HUD icons (`player.c`), the background processes and the scanner (`background.c`), the wave's process and arrivals (`wave.c`), landers and mutants with their arrival (`lander.c`), baiters (`baiter.c`), pods and swarmers (`pods.c`), bombers (`bombers.c`), enemy shots (`shots.c`), humanoids walking, dying, falling, landing, carried by the ship, their bonuses (`humanoids.c`), starting explosions (`explosions.c`), the laser as a process with the hit test (`hit.c`), hit handlers and kills (`enemies.c`), scoring (`score.c`); hyperspace, a death and its explosion, a wave's end and its bonus, the next player and game over (`death.c`) | `game`, `game_hunter`, `routines` (with sequences: wave ends and deaths followed step by step) |
 | X1 | (started 2026-10-20) Extractor: object pictures, font, logos, palette and sounds (done); the small font, terrain, scanner and the game's tables as the C game needs them | `extract`; the C game runs from `assets/` alone |
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |

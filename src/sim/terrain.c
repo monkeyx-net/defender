@@ -31,6 +31,7 @@ static void left_on(Game *g)
     uint16_t u = (uint16_t)(W(g, 0x09) + 1);
     if (u == STREAM_END) u = STREAM;
     SW(g, 0x09, u);
+    g->terrain_u = u;
     V(0x0F) = 7;
     V(0x0D) = stream(g, u);
 }
@@ -45,6 +46,7 @@ static void right_on(Game *g)
     uint16_t u = (uint16_t)(W(g, 0x0B) + 1);
     if (u == STREAM_END) u = STREAM;
     SW(g, 0x0B, u);
+    g->terrain_u = u;
     V(0x10) = 7;
     V(0x0E) = stream(g, u);
 }
@@ -61,6 +63,7 @@ static void left_back(Game *g)
     if (u == STREAM) u = STREAM_END;
     u--;
     SW(g, 0x09, u);
+    g->terrain_u = u;
     V(0x0F) = 0;
     V(0x0D) = ror(stream(g, u));
 }
@@ -76,6 +79,7 @@ static void right_back(Game *g)
     if (u == STREAM) u = STREAM_END;
     u--;
     SW(g, 0x0B, u);
+    g->terrain_u = u;
     V(0x10) = 0;
     V(0x0E) = ror(stream(g, u));
 }

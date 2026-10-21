@@ -38,6 +38,7 @@ typedef struct {
        cycles); -1 for the usual line, or the line a test saw */
     int split;
     uint16_t unported;      /* the resume address of the last step not ported */
+    uint16_t terrain_u;     /* U as the terrain code last left it (a cursor's byte) */
     /* where the bottom half breaks into the main loop's tick: -1 after it
        (the C game's order), or before the tick's write number n below
        $A000 (as a test saw the board do); tick_writes counts them */
