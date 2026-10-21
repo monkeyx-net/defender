@@ -30,3 +30,21 @@ int humanoid_kill(Game *g, uint16_t obj)
     game_sound(g, SOUND_DEAD);
     return 0;
 }
+
+StepResult humanoid_fall(Game *g, uint16_t proc)
+{
+    uint16_t obj = game_word(g, (uint16_t)(proc + 7));
+    Object *o = objects_at(&g->objects, obj);
+    if (!o) return STEP_UNPORTED;
+    uint16_t vy = (uint16_t)(o->vy + 8);
+    if (vy < 0x0300) o->vy = vy;
+    if (game_terrain(g, o->x) > (uint8_t)(o->y >> 8)) {
+        processes_sleep(&g->processes, 4, HUMANOID_FALL);
+        return STEP_DONE;
+    }
+    if (o->vy <= 0x00E0) return STEP_UNPORTED; /* lands safely */
+    game_set_word(g, 0xA0F8, (uint16_t)(o->screen + 0x0107));
+    if (humanoid_kill(g, obj)) return STEP_UNPORTED;
+    game_end_process(g);
+    return STEP_DONE;
+}

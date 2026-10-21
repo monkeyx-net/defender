@@ -28,6 +28,8 @@ typedef struct {
     int sound_sent;         /* the last sound sent to the board ($D539), -1 for none */
 } Game;
 
+/* A byte as the main CPU reads it: RAM below $C000, `data` above. */
+uint8_t game_read(const Game *g, uint16_t addr);
 /* A RAM byte or big-endian word, wherever it is kept. */
 int game_peek(const Game *g, uint16_t addr);
 void game_poke(Game *g, uint16_t addr, uint8_t value);
@@ -41,6 +43,8 @@ uint8_t game_random_upto(Game *g, uint8_t n);
 /* $D54D: start the sound script at `script`. */
 void game_sound(Game *g, uint16_t script);
 
+/* $ED59: the terrain's line under world x (the table at $B300, a line per 64 units). */
+uint8_t game_terrain(const Game *g, uint16_t x);
 /* $D539: send a sound number to the board (not RAM: kept for the game). */
 void game_send_sound(Game *g, uint8_t sound);
 /* $F3FE: erase an object where it was drawn (its picture's erase: w x h bytes). */

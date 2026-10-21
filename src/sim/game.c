@@ -1,6 +1,8 @@
 #include "sim/game.h"
 
+#include "sim/humanoids.h"
 #include "sim/lander.h"
+#include "sim/laser.h"
 #include "sim/rng.h"
 #include "sim/sounds.h"
 
@@ -8,6 +10,11 @@
 #define SOUND_SCRIPT 0xA0B0
 #define SOUND_PRIORITY 0xA0B2
 #define SOUND_THRUST 0xA0AD
+
+uint8_t game_read(const Game *g, uint16_t addr)
+{
+    return addr < GAME_RAM ? (uint8_t)game_peek(g, addr) : g->data[addr];
+}
 
 int game_peek(const Game *g, uint16_t addr)
 {
@@ -73,13 +80,15 @@ void game_sound(Game *g, uint16_t script)
 
 #define BANK 0xA036 /* <$36: the ROM bank the code last selected */
 
+uint8_t game_terrain(const Game *g, uint16_t x) { return (uint8_t)game_peek(g, (uint16_t)(0xB300 + (x >> 6))); }
+
 void game_send_sound(Game *g, uint8_t sound) { g->sound_sent = sound; }
 
 void game_erase_object(Game *g, uint16_t obj)
 {
     g->ram[BANK] = 2; /* $F503 */
     uint16_t at = game_word(g, obj + 4), picture = game_word(g, obj + 2);
-    int w = g->data[picture], h = g->data[picture + 1];
+    int w = game_read(g, picture), h = game_read(g, (uint16_t)(picture + 1));
     for (int c = 0; c < w; c++)
         for (int r = 0; r < h; r++) game_poke(g, (uint16_t)(at + c * 0x100 + r), 0);
 }
@@ -102,7 +111,11 @@ int game_step_ported(const Game *g, uint16_t proc)
     case LANDER_ALIGN:
     case LANDER_RISE:
     case LANDER_TOP:
-    case MUTANT: return 1;
+    case MUTANT:
+    case HUMANOID_FALL:
+    case LASER_FIRE:
+    case LASER_TICK_RIGHT:
+    case LASER_TICK_LEFT: return 1;
     }
     return 0;
 }
@@ -117,6 +130,10 @@ StepResult game_step(Game *g, uint16_t proc)
     case LANDER_RISE: return lander_rise(g, proc);
     case LANDER_TOP: return lander_top(g, proc);
     case MUTANT: return mutant_step(g, proc);
+    case HUMANOID_FALL: return humanoid_fall(g, proc);
+    case LASER_FIRE: return laser_fire(g, proc);
+    case LASER_TICK_RIGHT:
+    case LASER_TICK_LEFT: return laser_step(g, proc, p->resume == LASER_TICK_LEFT);
     }
     return STEP_UNPORTED;
 }

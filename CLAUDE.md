@@ -83,7 +83,9 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   pools typed, the rest raw; `game_step` runs a process step in C),
   `lander.c` (landers and mutants, every step), `shots.c` (enemy shots),
   `humanoids.c` (the humanoid table, a humanoid's death),
-  `explosions.c` (starting one);
+  `explosions.c` (starting one), `hit.c` (the hit test), `enemies.c` (hit
+  handlers, kills), `score.c` (scoring and the score digits); `laser.c`
+  also runs the laser as a process step;
   each mirrors a ROM routine's arithmetic exactly
 - `gfx/` - draws into the framebuffer in arcade coordinates (`fb.scale` > 1 for
   HD): `fb.c`, `blit.c`, `scale.c` (Scale2x/3x, xBR), `enhance.c` (graphics
@@ -134,7 +136,14 @@ Every change keeps `ctest` green.
   model must equal RAM when the ROM's step yields (a step an interrupt
   broke into must match with the interrupt's writes all before or all
   after it). The scratch byte `<$73` and the like are RAM
-  too: port the stores to them.
+  too: port the stores to them. The model's `data` is the fixed ROM with
+  bank 2 (pictures, font) at $C000.
+- `game_hunter` - label `rom`: `game` on a second scripted game (rapid
+  fire, sweeping up and down, turning; 12000 frames)
+- `routines` - label `rom`: ROM routines run on the emulated CPU from
+  chosen RAM and registers until they return, against the C ones on the
+  same RAM (`score_add`, 5000 random cases); use it where scripted play
+  rarely reaches a path
 - `mame_rom_map` - label `mame`: MAME's view of the main CPU's ROM (each
   bank at $C000, then $D000-$FFFF) equals `defender --dump-rom`
 - `mame_capture` - label `mame`: runs the scripted game in

@@ -1,5 +1,7 @@
 #include "sim/laser.h"
 
+#include "sim/hit.h"
+
 #define COLUMN 0x100
 #define RIGHT_EDGE 0x9800 /* a head at or past this column ends */
 #define LEFT_EDGE 0x0500  /* or at or before this one */
@@ -62,4 +64,76 @@ void laser_end(const Laser *l, uint8_t *vram)
             x = (uint16_t)(x + COLUMN);
         } while (x <= l->head);
     }
+}
+
+/* ---- as process steps on the game's RAM ($E591-$E69E) ---------------------- */
+
+#define LASERS_OUT 0xA0B5
+#define SHIP_SCREEN 0xA0C1
+#define FACING 0xA0BB
+#define STATE 0xA0BA
+#define BANK 0xA036
+#define COLOUR_NEXT 0xA0A4
+#define SOUND_LASER 0xD51B
+#define HIT_LINE 0xF96F
+
+static void load(Game *g, uint16_t proc, Laser *l, LaserColours *c, int left)
+{
+    l->head = game_word(g, (uint16_t)(proc + 7));
+    l->mid = game_word(g, (uint16_t)(proc + 9));
+    l->tail = game_word(g, (uint16_t)(proc + 11));
+    l->left = left;
+    c->next = game_word(g, COLOUR_NEXT);
+    for (int i = 0; i < LASER_COLOURS_SIZE; i++) c->table[i] = g->ram[LASER_COLOURS + i];
+}
+
+static void store(Game *g, uint16_t proc, const Laser *l, const LaserColours *c)
+{
+    game_set_word(g, (uint16_t)(proc + 7), l->head);
+    game_set_word(g, (uint16_t)(proc + 9), l->mid);
+    game_set_word(g, (uint16_t)(proc + 11), l->tail);
+    game_set_word(g, COLOUR_NEXT, c->next);
+}
+
+static StepResult end(Game *g, const Laser *l)
+{
+    laser_end(l, g->ram);
+    g->ram[LASERS_OUT]--;
+    game_end_process(g);
+    return STEP_DONE;
+}
+
+StepResult laser_step(Game *g, uint16_t proc, int left)
+{
+    Laser l;
+    LaserColours c;
+    load(g, proc, &l, &c, left);
+    if (laser_tick(&l, &c, g->ram, g->ram[STATE] & 0x40)) return end(g, &l);
+    store(g, proc, &l, &c);
+    g->ram[BANK] = 2; /* $E5AB */
+    int hit = hit_test(g, LIST_SCREEN, laser_hit_position(&l), HIT_LINE);
+    if (hit < 0) return STEP_UNPORTED;
+    if (hit) {
+        load(g, proc, &l, &c, left); /* as the ROM: its +7 and +B */
+        return end(g, &l);
+    }
+    processes_sleep(&g->processes, 1, left ? LASER_TICK_LEFT : LASER_TICK_RIGHT);
+    return STEP_DONE;
+}
+
+StepResult laser_fire(Game *g, uint16_t proc)
+{
+    if (g->ram[LASERS_OUT] >= LASER_MAX) {
+        game_end_process(g);
+        return STEP_DONE;
+    }
+    g->ram[LASERS_OUT]++;
+    game_sound(g, SOUND_LASER);
+    int left = g->ram[FACING] & 0x80;
+    Laser l;
+    laser_start(&l, game_word(g, SHIP_SCREEN), left);
+    game_set_word(g, (uint16_t)(proc + 7), l.head);
+    game_set_word(g, (uint16_t)(proc + 9), l.mid);
+    game_set_word(g, (uint16_t)(proc + 11), l.tail);
+    return laser_step(g, proc, left);
 }

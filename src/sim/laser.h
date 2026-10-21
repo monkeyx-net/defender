@@ -16,6 +16,7 @@
 
 #include <stdint.h>
 
+#include "sim/game.h"
 #include "sim/rng.h"
 
 #define LASER_MAX 4
@@ -47,5 +48,14 @@ uint16_t laser_hit_position(const Laser *l);
 
 /* Erase from tail to head. */
 void laser_end(const Laser *l, uint8_t *vram);
+
+/* The laser as process steps on the game's RAM: $E591 fires one (up to 4,
+   `<$B5`; script $D51B; the facing is `<$BB`), $E5CB / $E638 move it,
+   with the hit test ($E6BA) at its head. */
+#define LASER_FIRE 0xE591
+#define LASER_TICK_RIGHT 0xE5CB
+#define LASER_TICK_LEFT 0xE638
+StepResult laser_fire(Game *g, uint16_t proc);
+StepResult laser_step(Game *g, uint16_t proc, int left);
 
 #endif

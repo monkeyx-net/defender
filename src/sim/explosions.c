@@ -41,7 +41,7 @@ void explosion_start(Game *g, uint16_t obj)
     uint16_t corner = (uint16_t)((uint16_t)(rel << 2) & 0xFF00) | (uint8_t)game_peek(g, obj + 0xC);
     game_set_word(g, y + 8, corner);
     uint16_t d = (uint16_t)(corner - game_word(g, HIT_POINT));
-    uint8_t w = g->data[picture], h = g->data[picture + 1];
+    uint8_t w = game_read(g, picture), h = game_read(g, (uint16_t)(picture + 1));
     uint16_t centre;
     if ((d >> 8) + w > 0xFF && (d & 0xFF) + h > 0xFF) centre = game_word(g, HIT_POINT);
     else centre = (uint16_t)((w >> 1) << 8 | h >> 1) + corner;

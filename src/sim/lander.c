@@ -5,7 +5,6 @@
 #include "sim/shots.h"
 
 #define HUMANOID_NEXT 0xA09B   /* the slot the last search stopped at */
-#define TERRAIN 0xB300
 #define SHIP_X 0xA0CC          /* the ship's world x */
 #define SHIP_LINE 0xA0C0
 #define RANDOM 0xA0DF
@@ -71,8 +70,6 @@ static int pick_humanoid(Game *g, uint16_t proc)
     return 0;
 }
 
-/* $ED59: the terrain's line under world x. */
-static uint8_t terrain(const Game *g, uint16_t x) { return (uint8_t)game_peek(g, (uint16_t)(TERRAIN + (x >> 6))); }
 
 /* $EEFE: count down to the next shot. */
 static void shot_tick(Game *g, uint16_t proc, uint16_t obj)
@@ -145,7 +142,7 @@ static StepResult seek(Game *g, uint16_t proc, int pick)
         o->flags &= 0xFE;
         if (!pick_humanoid(g, proc)) return mutate(g, proc);
     }
-    uint8_t above = (uint8_t)(terrain(g, o->x) - HOVER), line = line_of(o);
+    uint8_t above = (uint8_t)(game_terrain(g, o->x) - HOVER), line = line_of(o);
     uint16_t descent = game_word(g, WAVE_DESCENT);
     if (above > line) o->vy = descent;
     else if ((int8_t)(uint8_t)(above - line) < -20) o->vy = (uint16_t)~descent;
