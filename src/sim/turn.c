@@ -18,7 +18,7 @@ static StepResult sleep(Game *g, uint8_t ticks, uint16_t resume)
 }
 
 /* $E052 */
-static void stars_init(Game *g)
+void stars_init(Game *g)
 {
     g->ram[0xA0AE] = 0x10;
     uint8_t colour = 0;
@@ -139,7 +139,6 @@ StepResult turn_step(Game *g, uint16_t proc, uint16_t resume)
         game_poke(g, (uint16_t)(proc + 7), 0x28);
         r[0xA118] = r[0xA10F];
         r[0xA117] = 1;
-        processes_at(&g->processes, proc)->resume = WAVE;
         return wave_step(g, proc);
     default:
         return STEP_UNPORTED;

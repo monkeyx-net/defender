@@ -96,6 +96,9 @@ typedef enum {
     STEP_DONE = 1,     /* it slept or ended */
     STEP_RESTART = 2,  /* it restarted the main loop ($E7BE): this tick's pass ends */
 } StepResult;
+/* $F4BE: the current process sleeps `ticks`, then resumes at `resume` in
+   the bank selected now (`<$36`, kept at +C, the address at +D; $F4CC). */
+StepResult game_sleep_banked(Game *g, uint16_t proc, uint8_t ticks, uint16_t resume);
 
 /* 1 if the process at `proc` resumes at a ported step. */
 int game_step_ported(const Game *g, uint16_t proc);

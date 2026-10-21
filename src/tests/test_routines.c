@@ -40,6 +40,11 @@
  *     left, the bonus, the next wave) and a death ($DA46: the flash, the
  *     explosion through banked sleeps, the next player or game over), with
  *     random humanoids, waves, players and ships left
+ *   - the attract mode from game over or power-on ($D825 / $DB48): random
+ *     high-score tables (today's in RAM, all time in CMOS) and players'
+ *     scores near their entries, every running process stepped in turn
+ *     with random fire and stick, then the explosions' tick ($FD2D): the
+ *     initials entered and sorted in, the hall of fame, the demo, the logo
  *   - score_add ($D360): random scores (BCD, a third of them small), points (BCD words, the pair
  *     and digit bits), players and extra-life intervals; cases that earn an
  *     extra life (not ported) are counted and skipped
@@ -55,6 +60,7 @@
 #include "sim/bombers.h"
 #include "sim/enemies.h"
 #include "sim/cmos.h"
+#include "sim/attract.h"
 #include "sim/death.h"
 #include "sim/turn.h"
 #include "sim/explosions.h"
@@ -176,6 +182,7 @@ static int rom_step(uint16_t proc)
     c->u = proc;
     c->dp = 0xA0;
     c->pc = (uint16_t)(board.ram[proc + 2] << 8 | board.ram[proc + 3]);
+    board.bank = board.ram[0xA036]; /* the latch as <$36 has it (bank 1's processes start there) */
     for (long n = 0; n < 1000000; n++) {
         if (c->pc == DISPATCH_NEXT || c->pc == 0xE7BE) return 0; /* the dispatcher, or the main loop restarted */
         m6809_step(c);
@@ -208,11 +215,13 @@ static void step_case(const char *what, long n, uint16_t proc)
 {
     store_model();
     if (rom_step(proc)) {
-        fprintf(stderr, "test_routines: %s: the ROM's step did not return\n", what);
+        fprintf(stderr, "test_routines: %s case %ld: the ROM's step at $%04X (bank %d, +C %d +D $%04X) did not return (PC $%04X)\n",
+                what, n, game_word(&model, (uint16_t)(proc + 2)), model.ram[0xA036], game_peek(&model, (uint16_t)(proc + 0xC)),
+                game_word(&model, (uint16_t)(proc + 0xD)), board.cpu.pc);
         failures++;
         return;
     }
-    if (game_step(&model, proc) != STEP_DONE) {
+    if (game_step(&model, proc) == STEP_UNPORTED) {
         steps_skipped++;
         return;
     }
@@ -897,6 +906,122 @@ static void test_sequences(int cases)
     printf("test_routines: sequences: %ld wave-end and %ld death steps equal the ROM's\n", waves, deaths);
 }
 
+/* The attract mode's controls: fire, the stick down (<$7B) and up (<$7D). */
+static int fire_odds;
+static void attract_inputs(void)
+{
+    model.ram[0xA07B] = (uint8_t)((rnd(fire_odds) ? 0 : 0x01) | (rnd(4) ? 0 : 0x80));
+    model.ram[0xA07D] = rnd(4) ? 0 : 0x01;
+}
+
+static struct { uint16_t at; long n; } reached[64]; /* steps by where they resume */
+
+static int running(uint16_t proc)
+{
+    for (uint16_t x = model.processes.head; x; x = processes_at(&model.processes, x)->link)
+        if (x == proc) return 1;
+    return 0;
+}
+
+/* Every running process a step in turn (the dispatcher's order, sleeps
+   ignored), `rounds` times, while their steps are ported. */
+static long follow_all(const char *what, long n, int rounds)
+{
+    long done = 0;
+    for (int k = 0; k < rounds; k++) {
+        uint16_t list[96];
+        int count = 0;
+        for (uint16_t x = model.processes.head; x && count < 96; x = processes_at(&model.processes, x)->link)
+            list[count++] = x;
+        for (int i = 0; i < count; i++) {
+            if (!running(list[i])) continue;
+            if (!game_step_ported(&model, list[i])) return done;
+            attract_inputs();
+            uint16_t at = processes_at(&model.processes, list[i])->resume;
+            if (at == BANKED_RESUME) at = game_word(&model, (uint16_t)(list[i] + 0xD));
+            for (int c = 0; c < 64; c++)
+                if (reached[c].at == at || !reached[c].n) {
+                    reached[c].at = at;
+                    reached[c].n++;
+                    break;
+                }
+            model.processes.current = list[i];
+            processes_at(&model.processes, list[i])->sleep = 1;
+            long before = steps_compared;
+            step_case(what, n, list[i]);
+            if (steps_compared == before) return done;
+            done++;
+            load_model();
+        }
+        board.bank = 2; /* then the main loop's tick: explosions and appearances */
+        if (call_case(what, n, 0xFD2D, 0, 0, 0, c_explosions) != -1) return done;
+        load_model();
+    }
+    return done;
+}
+
+/* A score of three BCD bytes, as a table keeps it (nibbles: high first). */
+static void table_byte(uint16_t a, uint8_t v)
+{
+    if (a >= 0xC400) cmos_write(&model, a, v);
+    else {
+        game_poke(&model, (uint16_t)(a + 1), v);
+        game_poke(&model, a, (uint8_t)(v >> 4));
+    }
+}
+
+static void table_fill(uint16_t at)
+{
+    uint32_t score = (uint32_t)rnd(0x1000000);
+    for (int i = 0; i < 8; i++, at = (uint16_t)(at + 12)) {
+        score -= (uint32_t)rnd(1 + score / 4);
+        uint8_t b[3] = { (uint8_t)(score >> 16), (uint8_t)(score >> 8), (uint8_t)score };
+        for (int k = 0; k < 3; k++) {
+            if ((b[k] & 0x0F) > 9) b[k] = (uint8_t)(b[k] & 0xF9);
+            if ((b[k] >> 4) > 9) b[k] = (uint8_t)(b[k] & 0x9F);
+            table_byte((uint16_t)(at + k * 2), b[k]);
+        }
+        for (int k = 0; k < 3; k++) table_byte((uint16_t)(at + 6 + k * 2), (uint8_t)(0x40 + rnd(27)));
+    }
+}
+
+static void test_attract(int cases)
+{
+    long steps = 0;
+    for (int n = 0; n < cases; n++) {
+        memcpy(board.ram, game_ram, sizeof game_ram);
+        load_model();
+        uint8_t *r = model.ram;
+        r[0xA0B7] = rnd(6) ? 1 : 0; /* after a game, or power-on */
+        r[0xA08C] = (uint8_t)(1 + rnd(2));
+        r[0xA037] = rnd(2) ? 0 : bcd_upto(9);
+        r[0xA059] = r[0xA05A] = 0xFF;
+        r[0xA052] = 0;
+        table_fill(0xB260);
+        if (rnd(2)) table_fill(0xC41D);
+        for (int p = 0; p < 2; p++) {
+            uint16_t block = p ? PLAYER_TWO : PLAYER_ONE;
+            uint16_t entry = (uint16_t)((rnd(2) ? 0xB260 : 0xC41D) + 12 * rnd(8));
+            for (int k = 0; k < 3; k++) { /* near an entry: equal, a digit off, or anything */
+                uint8_t v = (uint8_t)((game_peek(&model, (uint16_t)(entry + 2 * k)) & 0x0F) << 4 |
+                                      (entry >= 0xC400 ? model.cmos[(entry + 2 * k + 1) & 0xFF] & 0x0F
+                                                       : game_peek(&model, (uint16_t)(entry + 2 * k + 1)) & 0x0F));
+                if (entry >= 0xC400) v = cmos_read(&model, (uint16_t)(entry + 2 * k));
+                if (!rnd(3)) v = bcd();
+                game_poke(&model, (uint16_t)(block + 1 + k), v);
+            }
+        }
+        if (!rnd(4)) /* no score to enter */
+            for (int k = 1; k < 4; k++) game_poke(&model, (uint16_t)(PLAYER_ONE + k), 0), game_poke(&model, (uint16_t)(PLAYER_TWO + k), 0);
+        fire_odds = (int)(2 + rnd(10));
+        new_process(rnd(2) ? ATTRACT : GAME_OVER_DONE, 0);
+        steps += follow_all("attract", n, 300);
+    }
+    printf("test_routines: attract mode: %ld steps equal the ROM's; by where they resume:", steps);
+    for (int c = 0; c < 64 && reached[c].n; c++) printf(" $%04X %ld", reached[c].at, reached[c].n);
+    printf("\n");
+}
+
 static void test_score(int cases)
 {
     long done = 0, extra = 0;
@@ -974,6 +1099,7 @@ int main(int argc, char **argv)
     test_explosions(3000);
     test_flow(2000);
     test_sequences(200);
+    test_attract(30);
     if (failures) {
         fprintf(stderr, "test_routines: %d differences\n", failures);
         return 1;

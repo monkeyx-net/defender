@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "sim/background.h"
+#include "sim/attract.h"
 #include "sim/baiter.h"
 #include "sim/bombers.h"
 #include "sim/death.h"
@@ -156,6 +157,14 @@ int game_kill_object(Game *g, uint16_t obj)
     return 0;
 }
 
+StepResult game_sleep_banked(Game *g, uint16_t proc, uint8_t ticks, uint16_t resume)
+{
+    game_set_word(g, (uint16_t)(proc + 0xD), resume);
+    game_poke(g, (uint16_t)(proc + 0xC), g->ram[0xA036]);
+    processes_sleep(&g->processes, ticks, 0xF4CC);
+    return STEP_DONE;
+}
+
 void game_end_process(Game *g) { g->resume_from = processes_kill(&g->processes, g->processes.current); }
 
 int game_step_ported(const Game *g, uint16_t proc)
@@ -223,9 +232,12 @@ int game_step_ported(const Game *g, uint16_t proc)
     case BANKED_RESUME:
     case DEATH_NEXT:
     case WAVE_END_BONUS:
-    case WAVE_END_DONE: return 1;
+    case WAVE_END_DONE:
+    case ATTRACT:
+    case GAME_OVER_DONE: return 1;
     }
-    return 0;
+    /* bank 1's processes start there */
+    return p->resume >= 0xC000 && p->resume < 0xD000 && g->ram[0xA036] == 1 && attract_ported(p->resume);
 }
 
 StepResult game_step(Game *g, uint16_t proc)
@@ -294,10 +306,13 @@ StepResult game_step(Game *g, uint16_t proc)
     case BANKED_RESUME:
     case DEATH_NEXT:
     case WAVE_END_BONUS:
-    case WAVE_END_DONE: return death_step(g, proc, p->resume);
+    case WAVE_END_DONE:
+    case ATTRACT:
+    case GAME_OVER_DONE: return death_step(g, proc, p->resume);
     case WAVE: return wave_step(g, proc);
     case LASER_TICK_RIGHT:
     case LASER_TICK_LEFT: return laser_step(g, proc, p->resume == LASER_TICK_LEFT);
     }
+    if (p->resume >= 0xC000 && p->resume < 0xD000 && g->ram[0xA036] == 1) return attract_step(g, proc, p->resume);
     return STEP_UNPORTED;
 }

@@ -76,6 +76,7 @@ add_library(defender_core STATIC
   src/sim/text.c
   src/sim/turn.c
   src/sim/death.c
+  src/sim/attract.c
 )
 target_include_directories(defender_core PUBLIC src)
 target_link_libraries(defender_core PUBLIC m)

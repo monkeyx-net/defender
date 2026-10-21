@@ -96,7 +96,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   the start buttons' processes, a start, a player's wave set-up, the HUD,
   screen clears), `text.c` (the text printer), `turn.c` (a player's turn:
   reset, set-up, the wave's start), `death.c` (hyperspace, a death and
-  its explosion, a wave's end, the next player, game over), `hit.c` (the hit test), `enemies.c` (hit
+  its explosion, a wave's end, the next player, game over), `attract.c`
+  (bank 1's attract mode: high-score entry, hall of fame, demo, logos), `hit.c` (the hit test), `enemies.c` (hit
   handlers, kills), `score.c` (scoring and the score digits); `laser.c`
   also runs the laser as a process step;
   each mirrors a ROM routine's arithmetic exactly
@@ -146,8 +147,8 @@ Every change keeps `ctest` green.
   calls with an IRQ or FIRQ pending and unmasked)
 - `game` - label `rom`: a C model of all of RAM follows the board's
   scripted game (writes copied); ported process steps run in C and the
-  model must equal RAM when the ROM's step yields (a step an interrupt
-  broke into must match with the interrupt's writes all before or all
+  model must equal RAM when the ROM's step yields or restarts the main
+  loop at $E7BE (a step an interrupt broke into must match with the interrupt's writes all before or all
   after it, or replayed where they fell among its raw writes; a race the
   C game cannot have, the ROM reading partly before the interrupt, is
   counted and must stay under 1 in 1000). Main-loop calls ($E861) are
@@ -165,10 +166,12 @@ Every change keeps `ctest` green.
   chosen RAM and registers until they return, against the C ones on the
   same RAM (`score_add`, 5000 random cases), and process steps from a
   state built in the model (copied to RAM) until the ROM's step is back at
-  the dispatcher or the main loop's restart at $E7BE (the humanoids'
-  steps), and sequences of steps followed from one state (200 wave ends
-  and deaths); use it where scripted play rarely
-  reaches a path, and aim cases at the edges (thresholds, clamps)
+  the dispatcher or restarts the main loop at $E7BE (the humanoids'
+  steps); sequences followed from one state (200 wave ends and deaths);
+  the attract mode, every running process stepped in turn with the
+  explosions' tick after each round (high-score entry, hall of fame,
+  demo, logos); use it where scripted play rarely reaches a path, and aim
+  cases at the edges (thresholds, clamps)
 - `frame` - label `rom`: the C game on its own (`sim/frame.h`) against the
   board, compared after every frame; the board's band split and where its
   bottom half came in the tick are given; runs are short (timing), at

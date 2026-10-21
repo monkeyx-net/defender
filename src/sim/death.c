@@ -1,5 +1,6 @@
 #include "sim/death.h"
 
+#include "sim/attract.h"
 #include "sim/background.h"
 #include "sim/cmos.h"
 #include "sim/explosions.h"
@@ -92,14 +93,6 @@ static void explosion_setup(Game *g, uint16_t proc, uint16_t at, uint16_t back)
     r[0xA001] = 0x38;
 }
 
-/* $F4BE: sleep, then resume in the current bank at `resume`. */
-static StepResult banked_sleep(Game *g, uint16_t proc, uint8_t ticks, uint16_t resume)
-{
-    game_set_word(g, (uint16_t)(proc + 0xD), resume);
-    game_poke(g, (uint16_t)(proc + 0xC), g->ram[0xA036]);
-    return sleep(g, ticks, BANKED_RESUME);
-}
-
 static StepResult after_explosion(Game *g, uint16_t proc);
 
 /* bank 7 $C649 */
@@ -132,7 +125,7 @@ static StepResult explosion_tick(Game *g, uint16_t proc)
         game_set_word(g, 0xA002, (uint16_t)(game_word(g, 0xA002) + 1));
         r[0xA001] = 4;
     }
-    return banked_sleep(g, proc, 1, EXPLOSION_TICK);
+    return game_sleep_banked(g, proc, 1, EXPLOSION_TICK);
 }
 
 /* $DB15: the next player with ships left, and their turn. */
@@ -147,7 +140,6 @@ static StepResult next_player(Game *g, uint16_t proc)
     }
     r[0xA08B] = a;
     r[0xA025]++;
-    processes_at(&g->processes, proc)->resume = TURN;
     return turn_step(g, proc, TURN);
 }
 
@@ -269,7 +261,6 @@ StepResult death_step(Game *g, uint16_t proc, uint16_t resume)
         if (game_kill_object(g, game_word(g, (uint16_t)(proc + 7)))) return STEP_UNPORTED;
         set_state(g, 0);
         if (r[0xA0E1] > 0xC0) {
-            processes_at(&g->processes, proc)->resume = DEATH;
             return death_step(g, proc, DEATH);
         }
         game_end_process(g);
@@ -308,17 +299,22 @@ StepResult death_step(Game *g, uint16_t proc, uint16_t resume)
         kill_others(g);
         r[0xA036] = 7;
         explosion_setup(g, proc, (uint16_t)(game_word(g, 0xA0C1) + 0x0403), 0xDAC9);
-        return banked_sleep(g, proc, 1, EXPLOSION_TICK);
+        return game_sleep_banked(g, proc, 1, EXPLOSION_TICK);
     case BANKED_RESUME: {
         uint8_t bank = (uint8_t)game_peek(g, (uint16_t)(proc + 0xC));
         uint16_t at = game_word(g, (uint16_t)(proc + 0xD));
         r[0xA036] = bank;
         if (bank == 7 && at == EXPLOSION_TICK) return explosion_tick(g, proc);
+        if (bank == 1 && attract_ported(at)) return attract_step(g, proc, at);
         g->unported = BANKED_RESUME;
         return STEP_UNPORTED;
     }
     case DEATH_NEXT:
         return next_player(g, proc);
+    case ATTRACT:
+    case GAME_OVER_DONE: /* $D825 */
+        g->ram[0xA036] = 1;
+        return attract_step(g, proc, 0xC006);
     case WAVE_END_BONUS: { /* $DE66: the next bonus humanoid */
         uint8_t n = (uint8_t)(game_peek(g, (uint16_t)(proc + 9)) - 1);
         game_poke(g, (uint16_t)(proc + 9), n);
@@ -333,7 +329,6 @@ StepResult death_step(Game *g, uint16_t proc, uint16_t resume)
         if (back == 0xDD02) {
             uint16_t block = game_word(g, 0xA08D);
             game_poke(g, (uint16_t)(block + 7), (uint8_t)(game_peek(g, (uint16_t)(block + 7)) + 1));
-            processes_at(&g->processes, proc)->resume = TURN_RESET;
             return turn_step(g, proc, TURN_RESET);
         }
         if (back == 0xDADB) {

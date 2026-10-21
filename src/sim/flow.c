@@ -35,8 +35,7 @@ void clear_playfield(Game *g)
         for (int line = 0xFF; line >= 0x2A; line--) game_poke(g, (uint16_t)(c << 8 | line), 0);
 }
 
-/* $D6BC */
-static void hud_frame(Game *g)
+void hud_frame(Game *g)
 {
     for (uint16_t x = 0x0028; x < 0x9C00; x = (uint16_t)(x + 0x100)) game_set_word(g, x, 0x5555);
     for (uint16_t x = 0x2F08; x != 0x2F28; x = (uint16_t)(x + 2)) {

@@ -478,6 +478,69 @@ is $A0 throughout, so `<$xx` is $A0xx.
 - **The number printer** (bank 2, `src/sim/text.c`): $CBC1 prints the
   BCD digits of D at X, leading zeros dropped (0 prints "0"), a digit
   per call through `<$59` like the typewriter.
+- **The attract mode and high scores** (bank 1; ported:
+  `src/sim/attract.c`). Power-on's last step creates $D825 (type 1),
+  which game over's $DB48 also reaches: bank 1 selected, $C006. Bank 1's
+  processes start in bank 1 (created at $Cxxx, the bank left selected)
+  and sleep through $F4BE / $F4CC (+C the bank, +D the address); their
+  text goes through $FFCE (`JSR` then the routine's address and bank
+  inline: $F4D3 selects it, calls, and restores the bank), mostly bank
+  2's printer ($C002) and number printer ($C00E). $C006: every other
+  process ended, `<$BA` = $FF, the stars, `<$A183` = the credits; with
+  `<$B7` clear (power-on) the logo, else for each player block ($A1C2,
+  $A1FF; `<$06` 1, 2) whose score (+1..+3) beats today's eighth best
+  ($C147: the first two bytes, then the third): the screen cleared, the
+  interrupt's handler set (`<$8F-<$91` = JMP $DF17, or $DFC3 for player
+  2 on a cocktail table), palette entry 1 $85, sounds $1B and 1 (2 when it
+  beats today's best; written to the sound PIA directly), "PLAYER
+  ONE/TWO" ($C0EF / $C0F1 at $3E38) and $C0FD at $1458; the initials at
+  `<$00`, `<$02`, `<$04` ('/'-ended, from "A@@"), drawn by $C158 (cleared
+  $14 x 8 at $46AC, message $C0FF); bars under them ($C16B, the current
+  one $DDDD, others $1111); `<$A17D` = $28 seconds ($C1DC takes one every
+  $3C ticks), $C1E7 blinks palette entry 13 every $0F ticks, $C1FA steps
+  the current letter (IN0 bit 7 down, IN1 bit 0 up; first after 3 ticks,
+  then every `<$A17E` = `<$A17E` / 2 + 5 from $37; '?' wraps to 'Z', '['
+  to '@'). Fire, once released for 5 ticks, takes the next letter ($14
+  seconds again). After 3 or the time out: every other process ended, the
+  entry sorted into today's table (8 entries of 12 nibbles at $B260:
+  score bytes 1-3, then the initials; from $B2A8 up, each beaten entry
+  moved a place down, $C194) and, if it beats the last there, the all-time
+  table in CMOS ($C41D-$C47C, from $C465). With no entry, $FF ticks of
+  game over first. The hall of fame ($C263): the logo unpacked ($C86F:
+  bank 1 $CAA0-$CC0D, a nibble a run: 2 bits of length (more nibbles with
+  no colour add 2 bits each), 2 of colour from $CC0D, pixel pairs into
+  $B412 by rows of $3C columns $18 bytes apart), the screen cleared,
+  the credits' process, the scores, $C101 at $3854 underlined, both
+  tables ($C306: rank '1'-'8' at `<$06`, initials at `<$08`, digits at
+  `<$0C` with leading zeros '@', each a line $0A further: today's at
+  $1886, all time at $5986), the logo (descriptor $3C18 at $B300) at
+  $3038, the laser's colour cycle; $3C x $0A ticks (sooner with a credit,
+  `<$A184`), then the demo ($C351): the playfield and terrain at scroll 0,
+  `<$BA` = $D9, the HUD's frame, the colour processes, the housekeeping
+  and the names ($C64F: bank 1's list at $CC61, one each 6 ticks up to
+  `<$A196`); a humanoid, the ship and a lander appearing, the lander
+  rising with the humanoid ($E6 ticks), the laser ($C5F5: from the ship's
+  screen position + $0704, 4 bytes $11 and a $99 a tick, colours from
+  `<$A4`, its tail cleared; $C460 clears it and kills it), the lander
+  exploding, the humanoid falling, caught (500 shown), carried down; then
+  six enemies (bank 1 $CC7D: lines, pictures +$0C, columns +$18, colours
+  +$24) appearing, shot and lined up with their names; $1FE ticks, then
+  the logo ($C677): `<$BA` = $FB, the screen cleared, the colour
+  processes; "WILLIAMS" drawn ($C6B0, bank 1 $C941: bytes up to $AA two
+  moves each (bits 7-4: x - 1, x + 1, y - 1, y + 1, then a pixel), $FE x y
+  a jump, $FF nothing, others the end; `<$A16A` bytes a pass every 2
+  ticks, 3 then 10; at the first end $C730: message $C0ED at $3258,
+  every 5 ticks), after $30 ticks the
+  DEFENDER logo's 15 blocks (4 x $C at $B304, 14 bytes apart, their
+  descriptors at $B3D6) appear left to right (links left 0: only the last
+  is listed), after $2E ticks $C848 draws the whole logo at $3090 until
+  both first explosion slots are free, then ($C921) "WILLIAMS" finishes at
+  once; after $28 more the copyright's bitmap ($CC11, 40 columns of 8
+  lines at $3BD0) and `<$B7` = 1; then $3C x $0A ticks and the hall of
+  fame. $C8F4, every 16 ticks with credits: $C0E9 at $28E5 and the number
+  at $48E5 (`<$A184` + 1 when they rose). Then $C80B: when palette entry
+  [$C6F8] has bits 0-2 set, `<$B8` = `<$A168` (where "WILLIAMS" ended;
+  purpose unknown).
 - **The frame** (ported: `src/sim/frame.c`). The interrupt comes at lines
   0, 64, 128 and 192 (a few lines late while interrupts are masked); the
   handler ($DF17) works at the first with the beam at or past $80 (`<$92`
@@ -764,7 +827,7 @@ Found by comparing instruction traces (`mame_emu`):
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |
 | C2 | Remaining enemies (mutants, bombers, pods and swarmers, baiters), wave flow, planet destruction, extra lives | Side-by-side test over several waves |
-| C3 | Attract mode, high scores and initials, operator pages, 2 players; sounds from the WAVs; the C game becomes the default | Full scripted run matches; release with `assets/` only |
+| C3 | (started 2026-10-21) Attract mode, high scores and initials (`attract.c`: done), operator pages, 2 players; sounds from the WAVs; the C game becomes the default | Full scripted run matches; release with `assets/` only |
 
 ## 5. Fixes carried back to the Joust port (2026-10-20)
 

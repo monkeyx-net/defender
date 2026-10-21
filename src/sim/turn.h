@@ -34,6 +34,8 @@
 
 /* $D7B6 */
 void game_reset(Game *g);
+/* $E052: 16 stars at random, colours stepping $11. */
+void stars_init(Game *g);
 StepResult turn_step(Game *g, uint16_t proc, uint16_t resume);
 
 #endif

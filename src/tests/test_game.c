@@ -46,6 +46,7 @@
 #define HUNTER_FRAMES 12000
 #define DISPATCH 0xE853  /* JMP [2,U] */
 #define DISPATCH_NEXT 0xE856
+#define MAIN_LOOP 0xE7BE
 #define STACK 0xBF00     /* the stack page: copied, never compared */
 #define IRQ_RETURN 0xDFC1 /* the interrupt handler's PULS CC,D,DP,X,Y,U,PC */
 
@@ -128,6 +129,22 @@ static int raw_address(uint16_t a)
 static uint8_t predicted[GAME_RAM], has_prediction[GAME_RAM], written[GAME_RAM];
 static int step_active, step_interrupted, irq_depth, failures;
 static struct { uint16_t resume; long n; } by_resume[64];
+/* steps not ported, by where they resume (banked ones, $F4CC, by bank and address) */
+static struct { uint32_t at; long n; } not_ported[64];
+
+static void count_not_ported(uint16_t proc)
+{
+    uint16_t resume = processes_at(&model.processes, proc)->resume;
+    uint32_t at = resume;
+    if (resume == 0xF4CC)
+        at = (uint32_t)game_peek(&model, (uint16_t)(proc + 0xC)) << 16 | game_word(&model, (uint16_t)(proc + 0xD));
+    for (int i = 0; i < 64; i++)
+        if (not_ported[i].at == at || !not_ported[i].n) {
+            not_ported[i].at = at;
+            not_ported[i].n++;
+            return;
+        }
+}
 static long handler_calls[3]; /* the ROM's $F20B, $EF6D, $F1E0 */
 static long steps_raced;
 static long steps, steps_unported, steps_interrupted, steps_matched, frame_checks, steps_reordered;
@@ -168,7 +185,7 @@ static int merged_matches(uint16_t proc)
 {
     other = reads;
     (void)proc;
-    if (run_c(&other) != STEP_DONE) return 0;
+    if (run_c(&other) == STEP_UNPORTED) return 0;
     merged = before;
     apply_irq_writes(&merged);
     for (unsigned a = 0; a < STACK; a++) {
@@ -213,7 +230,7 @@ static int matches_interleaved(uint16_t proc)
             game_poke(&other, irq_writes[i].addr, irq_writes[i].value);
         next_irq++;
     }
-    return r == STEP_DONE && first_difference_of(&other) < 0;
+    return r != STEP_UNPORTED && first_difference_of(&other) < 0;
 }
 
 /* An interrupted step: does it match with the interrupt's effect on what it read before or after? */
@@ -244,7 +261,10 @@ static uint8_t predicted_cmos[256];
 
 static void start_step(uint16_t proc, int kind)
 {
-    if (kind == KIND_STEP && !game_step_ported(&model, proc)) return;
+    if (kind == KIND_STEP && !game_step_ported(&model, proc)) {
+        count_not_ported(proc);
+        return;
+    }
     game_load_cmos(&model, board.cmos); /* CMOS is not RAM: the board's, at each step */
     step_kind = kind;
     step_proc = proc;
@@ -264,8 +284,11 @@ static void start_step(uint16_t proc, int kind)
             break;
         }
     scratch = model;
-    if (run_c(&scratch) != STEP_DONE) {
+    if (run_c(&scratch) == STEP_UNPORTED) {
         steps_unported++;
+        if (kind == KIND_STEP) {
+            count_not_ported(proc);
+        }
         return; /* the ROM's writes are copied as usual */
     }
     memcpy(predicted_cmos, scratch.cmos, sizeof predicted_cmos);
@@ -366,7 +389,8 @@ static void step_hook(Board *b)
         return;
     }
     if (pc == DISPATCH && !step_active) start_step(b->cpu.u, KIND_STEP);
-    else if (pc == DISPATCH_NEXT && step_active && step_kind == KIND_STEP) end_step();
+    /* a step ends back at the dispatcher, or restarting the main loop ($E7BE) */
+    else if ((pc == DISPATCH_NEXT || pc == MAIN_LOOP) && step_active && step_kind == KIND_STEP) end_step();
     else if (pc == 0xE861 && !step_active) {
         call_ret = (uint16_t)(b->ram[b->cpu.s] << 8 | b->ram[(uint16_t)(b->cpu.s + 1)]);
         call_sp = (uint16_t)(b->cpu.s + 2);
@@ -498,6 +522,10 @@ int main(int argc, char **argv)
            handler_calls[0], handler_calls[1], handler_calls[2]);
     printf("test_game: steps by where they resume:");
     for (int i = 0; i < 64 && by_resume[i].resume; i++) printf(" $%04X %ld", by_resume[i].resume, by_resume[i].n);
+    printf("\ntest_game: not ported, by where they resume:");
+    for (int i = 0; i < 64 && not_ported[i].n; i++)
+        if (not_ported[i].at >> 16) printf(" %u:$%04X %ld", (unsigned)(not_ported[i].at >> 16), (unsigned)(not_ported[i].at & 0xFFFF), not_ported[i].n);
+        else printf(" $%04X %ld", (unsigned)not_ported[i].at, not_ported[i].n);
     printf("\n");
     if (steps_matched < 100) {
         fprintf(stderr, "test_game: too few steps matched\n");

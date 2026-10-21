@@ -43,6 +43,8 @@ void kill_others(Game *g);
 void clear_screen(Game *g);
 void clear_playfield(Game *g);
 void hud_draw(Game *g);
+/* $D6BC: the scanner's frame and the line under the HUD. */
+void hud_frame(Game *g);
 void wave_setup(Game *g, uint16_t block);
 StepResult flow_step(Game *g, uint16_t proc, uint16_t resume);
 

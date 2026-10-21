@@ -20,22 +20,21 @@ void explosion_erase(Game *g, uint16_t slot)
 
 void appear_start(Game *g, uint16_t obj)
 {
-    Object *o = objects_at(&g->objects, obj);
-    if (!o) return;
-    uint16_t picture = o->picture;
-    o->picture = (uint16_t)(game_read(g, 0xFF9D) << 8 | game_read(g, 0xFF9E)); /* $F8EC */
-    g->objects.screen = obj;
-    uint16_t rel = (uint16_t)(o->x - game_word(g, SCROLL));
+    /* by address: the attract mode's logo blocks are outside the pool */
+    uint16_t picture = game_word(g, (uint16_t)(obj + 2));
+    game_set_word(g, (uint16_t)(obj + 2), (uint16_t)(game_read(g, 0xFF9D) << 8 | game_read(g, 0xFF9E))); /* $F8EC */
+    game_set_word(g, LIST_SCREEN, obj);
+    uint16_t rel = (uint16_t)(game_word(g, (uint16_t)(obj + 0xA)) - game_word(g, SCROLL));
     uint16_t last = game_word(g, EXPLOSION_LAST), y = last;
     if (rel > 0x2600) {
-        o->picture = picture;
+        game_set_word(g, (uint16_t)(obj + 2), picture);
         return;
     }
     for (;;) {
         y = y ? (uint16_t)(y + EXPLOSION_SIZE) : EXPLOSIONS;
         if (y == EXPLOSIONS_END) y = EXPLOSIONS;
         if (y == last) {
-            o->picture = picture;
+            game_set_word(g, (uint16_t)(obj + 2), picture);
             return;
         }
         uint8_t state = (uint8_t)game_peek(g, y);
@@ -44,7 +43,7 @@ void appear_start(Game *g, uint16_t obj)
         break;
     }
     if (!(g->ram[0xA0BA] & 0x80)) game_sound(g, (uint16_t)(game_read(g, 0xFFDD) << 8 | game_read(g, 0xFFDE)));
-    o->flags |= 2;
+    game_poke(g, (uint16_t)(obj + 0x14), (uint8_t)(game_peek(g, (uint16_t)(obj + 0x14)) | 2));
     game_set_word(g, y, 0xAF00);
     game_set_word(g, (uint16_t)(y + 2), picture);
     game_set_word(g, (uint16_t)(y + 4), (uint16_t)(y + LIST_END));
@@ -194,11 +193,9 @@ void explosion_draw(Game *g, uint16_t y)
 static void appear_done(Game *g, uint16_t y)
 {
     game_set_word(g, y, 0);
-    Object *o = objects_at(&g->objects, game_word(g, (uint16_t)(y + 0xA)));
-    if (o) {
-        o->picture = game_word(g, (uint16_t)(y + 2));
-        o->flags &= 0xFD;
-    }
+    uint16_t obj = game_word(g, (uint16_t)(y + 0xA)); /* by address, as appear_start */
+    game_set_word(g, (uint16_t)(obj + 2), game_word(g, (uint16_t)(y + 2)));
+    game_poke(g, (uint16_t)(obj + 0x14), (uint8_t)(game_peek(g, (uint16_t)(obj + 0x14)) & 0xFD));
     explosion_erase(g, y);
 }
 
