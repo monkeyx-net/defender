@@ -24,11 +24,13 @@
 
 #include "assets/rom.h"
 #include "emu/board.h"
+#include "sim/boot.h"
 #include "sim/frame.h"
 
 #define PRIME_FRAMES 1800
 #define FRAMES 5200
 #define HUNTER_FRAMES 12000
+#define ALONE_FRAMES 20000
 #define STACK 0xBF00
 #define IDLE_FIRST 0xE7C3 /* the main loop waiting for the tick */
 #define IDLE_LAST 0xE7C6
@@ -51,6 +53,19 @@ static void write_hook(Board *b, uint16_t a, uint8_t v)
     (void)b;
     (void)v;
     if (!in_irq && ticking && a < STACK && raw(a)) tick_writes++;
+}
+
+static Board boot_board; /* power-on, on a board of its own */
+static int booted;        /* the ROM's power-on set-up done ($D7B3) */
+static uint8_t boot_ram[0xC000], boot_cmos[BOARD_CMOS_SIZE];
+
+static void boot_hook(Board *b)
+{
+    if (b->cpu.pc == 0xD7B3 && !booted) {
+        booted = 1;
+        memcpy(boot_ram, b->ram, sizeof boot_ram);
+        memcpy(boot_cmos, b->cmos, sizeof boot_cmos);
+    }
 }
 
 static void step_hook(Board *b)
@@ -148,6 +163,37 @@ int main(int argc, char **argv)
     board_init(&board, &rom, cmos);
     board.step_hook = step_hook;
     board.write_hook = write_hook;
+
+    /* power-on: the C set-up against the ROM's when its self-test is done */
+    board_init(&boot_board, &rom, cmos);
+    boot_board.step_hook = boot_hook;
+    while (!booted) board_run_frame(&boot_board, NULL);
+    game_load_cmos(&game, boot_cmos);
+    game_power_on(&game);
+    for (unsigned a = 0; a < STACK; a++)
+        if (game_peek(&game, (uint16_t)a) != boot_ram[a]) {
+            fprintf(stderr, "test_frame: power-on: $%04X = %02X, C %02X\n", a, boot_ram[a], game_peek(&game, (uint16_t)a));
+            return 1;
+        }
+    printf("test_frame: power-on equals the ROM's (frame %lld)\n", (long long)boot_board.frame);
+
+    /* the C game alone from power-on: the script's controls (frames counted
+       from the board's power-on), past game over into the attract mode */
+    long games = 0, alone_unported = 0;
+    for (long f = boot_board.frame + 1, n = 0; n < ALONE_FRAMES; f++, n++) {
+        controls(f, &game.in0, &game.in1, &game.in2);
+        game.cra = 0;
+        int was = !(game.ram[0xA0BA] & 0x80); /* in a game: <$BA positive */
+        if (game_frame(&game) && alone_unported++ < 3)
+            fprintf(stderr, "test_frame: alone, frame %ld: not ported (a step at $%04X)\n", f, game.unported);
+        if (was && (game.ram[0xA0BA] & 0x80)) games++;
+    }
+    printf("test_frame: the C game alone: %d frames from power-on, %ld games played to the end, %ld frames not ported\n",
+           ALONE_FRAMES, games, alone_unported);
+    if (alone_unported || !games) {
+        fprintf(stderr, "test_frame: the C game alone did not play through\n");
+        return 1;
+    }
 
     long frames = script ? HUNTER_FRAMES : FRAMES, c_frames = 0, runs = 0, longest = 0, run = 0;
     long ended_diff = 0, ended_unported = 0, shown = 0;

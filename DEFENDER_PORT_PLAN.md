@@ -712,10 +712,11 @@ Found by comparing instruction traces (`mame_emu`):
 - With a blank CMOS the game restores its factory settings and stops in the
   bookkeeping pages; the port (and the MAME tests) run that once and boot
   again with the CMOS it wrote.
-- $A0BF is a status byte: $21 at power-on, $00 in the attract mode, $10
-  once there are credits or a game has ended, and bit 5 ($20) set from a
-  game's start to its end (high-score display included), 1 or 2 players
-  (`ram_probe.lua`). The port shows its controls page while bit 5 is clear.
+- `<$BA` ($A0BA) is negative all through the attract mode (game over and
+  the high scores included; the start buttons test it) and positive in a
+  game. The port shows its controls page while it is negative. ($A0BF,
+  once taken for a status byte, is the ship's screen position `<$BF-<$C0`:
+  its bit 5 flips in play.)
 - The main CPU's idle loop is $E7C3-$E7C7 (waiting on <$5D, direct page
   $A0); the interrupts do the work. The controls are read around line 130
   ($D5D7, $D5DC).
@@ -828,7 +829,7 @@ Found by comparing instruction traces (`mame_emu`):
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |
 | C2 | Remaining enemies (mutants, bombers, pods and swarmers, baiters), wave flow, planet destruction, extra lives | Side-by-side test over several waves |
-| C3 | (started 2026-10-21) Attract mode, high scores and initials (`attract.c`: done), operator pages, 2 players; sounds from the WAVs; the C game becomes the default | Full scripted run matches; release with `assets/` only |
+| C3 | (started 2026-10-21) Attract mode, high scores and initials (`attract.c`: done), power-on after the self-test (`boot.c`: done), extra lives and the minutes' bookkeeping (done), `--c-game` (the C game alone, drawn from its RAM, sounds from the WAVs: done; its tables still from the ROM set), operator pages, the self-test, a cocktail table's player 2 side; the C game becomes the default | Full scripted run matches; release with `assets/` only |
 
 ## 5. Fixes carried back to the Joust port (2026-10-20)
 

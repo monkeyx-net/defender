@@ -46,6 +46,7 @@ ctest --test-dir build -L rom                     # tests needing the ROM set (r
 ctest --test-dir build -L mame                    # tests needing MAME + the ROM set
 build/defender --windowed                         # play (finds roms/defender.zip in dev builds)
 build/defender --windowed --test-card             # the test card (ROM status, input tester)
+build/defender --windowed --c-game                # the game written in C (src/sim/), not the emulated board
 build/defender --windowed --gfx hd-glow           # enhanced graphics (presets: classic ... hd-glow-crt)
 SDL_VIDEODRIVER=dummy build/defender --frames 60 --screenshot out.png   # headless screenshot
 build/defender --check-rom roms/defender.zip      # verify a ROM set
@@ -62,9 +63,10 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
 
 - `main.c` - SDL setup, fixed 60 Hz loop running one board frame per tick,
   the graphics pipeline, CMOS saving, the controls page over the attract
-  mode (after 30 s idle; `$A0BF` bit 5 tells a game from the attract mode),
-  the test card (`--test-card`),
-  `--input`, `--frames`, `--screenshot`, `--rom`, `--check-rom`, `--dump-rom`,
+  mode (after 30 s idle; `<$BA` negative is the attract mode),
+  the test card (`--test-card`), the game written in C instead of the
+  board (`--c-game`: drawn from its RAM, the extracted WAVs; its tables
+  still from the ROM set), `--input`, `--frames`, `--screenshot`, `--rom`, `--check-rom`, `--dump-rom`,
   `--extract`
 - `emu/` - the emulated hardware: `m6809.c` (main CPU), `pia6821.c`,
   `board.c` (Defender's main board: memory map with ROM banks and the I/O
@@ -97,7 +99,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   screen clears), `text.c` (the text printer), `turn.c` (a player's turn:
   reset, set-up, the wave's start), `death.c` (hyperspace, a death and
   its explosion, a wave's end, the next player, game over), `attract.c`
-  (bank 1's attract mode: high-score entry, hall of fame, demo, logos), `hit.c` (the hit test), `enemies.c` (hit
+  (bank 1's attract mode: high-score entry, hall of fame, demo, logos),
+  `boot.c` (power-on after the self-test), `hit.c` (the hit test), `enemies.c` (hit
   handlers, kills), `score.c` (scoring and the score digits); `laser.c`
   also runs the laser as a process step;
   each mirrors a ROM routine's arithmetic exactly
@@ -175,7 +178,10 @@ Every change keeps `ctest` green.
 - `frame` - label `rom`: the C game on its own (`sim/frame.h`) against the
   board, compared after every frame; the board's band split and where its
   bottom half came in the tick are given; runs are short (timing), at
-  least 1000 frames must match
+  least 1000 frames must match. Also: the C power-on (`game_power_on`)
+  equals RAM when the ROM's set-up is done ($D7B3), and the C game alone
+  plays 20000 frames from power-on (a game to its end, back to the
+  attract mode) without reaching unported code
 - `mame_rom_map` - label `mame`: MAME's view of the main CPU's ROM (each
   bank at $C000, then $D000-$FFFF) equals `defender --dump-rom`
 - `mame_capture` - label `mame`: runs the scripted game in

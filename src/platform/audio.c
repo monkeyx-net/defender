@@ -15,6 +15,7 @@ typedef struct {
     Uint32 frames;
     int priority;
     float volume;
+    int loop;              /* plays until stopped */
 } Clip;
 
 typedef struct {
@@ -62,6 +63,7 @@ static void mix(void *ud, Uint8 *stream_bytes, int len)
         const Clip *clip = &clips[v->id];
         float vol = clip->volume;
         for (int i = 0; i < frames; i++) {
+            if (v->pos >= clip->frames && clip->loop) v->pos = 0;
             if (v->pos >= clip->frames || v->gain <= 0) {
                 v->active = 0;
                 break;
@@ -107,6 +109,7 @@ int audio_load(const char *file, int priority, float volume)
     clips[id].frames = (Uint32)(cvt.needed ? cvt.len_cvt : cvt.len) / 4;
     clips[id].priority = priority;
     clips[id].volume = volume;
+    clips[id].loop = 0;
     clip_count++;
     return id;
 }
@@ -202,6 +205,20 @@ void audio_play(int id)
         slot->gain = 1;
         slot->started = ++play_counter;
     }
+    SDL_UnlockAudioDevice(dev);
+}
+
+void audio_set_loop(int id, int loop)
+{
+    if (id >= 0 && id < clip_count) clips[id].loop = loop;
+}
+
+void audio_fade_all(void)
+{
+    if (!dev) return;
+    SDL_LockAudioDevice(dev);
+    for (int c = 0; c < CHANNELS; c++)
+        if (voices[c].active && !voices[c].fading) fade_out(&voices[c]);
     SDL_UnlockAudioDevice(dev);
 }
 

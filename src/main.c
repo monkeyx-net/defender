@@ -3,9 +3,11 @@
  * The game is the ROM's own code on the emulated board (emu/board.c), one
  * board frame per tick; the port supplies video (with the enhanced presets),
  * input and saving the arcade's CMOS. --test-card shows the test card instead
- * (ROM status, an input tester and the graphics presets).
+ * (ROM status, an input tester and the graphics presets). --c-game runs the
+ * game written in C (sim/) instead of the board: not yet complete (plan
+ * decision 6), its tables still read from the ROM set.
  *
- *   defender [--windowed] [--gfx preset] [--rom path] [--test-card]
+ *   defender [--windowed] [--gfx preset] [--rom path] [--test-card] [--c-game]
  *            [--input script.txt] [--frames N] [--screenshot out.png]
  *   defender --check-rom <dir|zip>
  *   defender --dump-rom <dir|zip> <first> <last>
@@ -40,9 +42,13 @@
 #include "gfx/debugfont.h"
 #include "gfx/enhance.h"
 #include "gfx/fb.h"
+#include "gfx/williams.h"
 #include "platform/audio.h"
 #include "platform/input.h"
 #include "platform/video.h"
+#include "sim/boot.h"
+#include "sim/frame.h"
+#include "sim/game.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -88,9 +94,10 @@ typedef struct {
     Board board;
     int cmos_wait;       /* frames until changed CMOS is written */
     long idle;           /* frames of attract mode without input (the controls page) */
-} Game;
+    int c_game;          /* --c-game: the game written in C instead of the board */
+} Port;
 
-static Game g;
+static Port g;
 
 /* ---- test card ------------------------------------------------------------ */
 
@@ -198,23 +205,99 @@ static void save_cmos(void)
 }
 
 /* The port's controls as the cabinet's switches (emu/board.h). */
-static void board_inputs(const InputFrame *in)
+static void panel(const InputFrame *in, uint8_t *in0, uint8_t *in1, uint8_t *in2)
 {
-    Board *b = &g.board;
-    b->in0 = (uint8_t)((in->fire ? IN0_FIRE : 0) | (in->thrust ? IN0_THRUST : 0) |
-                       (in->smart_bomb ? IN0_SMART_BOMB : 0) | (in->hyperspace ? IN0_HYPERSPACE : 0) |
-                       (in->start2 ? IN0_START2 : 0) | (in->start ? IN0_START1 : 0) |
-                       (in->reverse ? IN0_REVERSE : 0) | (in->move_y > 0 ? IN0_DOWN : 0));
-    b->in1 = in->move_y < 0 ? IN1_UP : 0;
-    b->in2 = (uint8_t)((in->coin ? IN2_COIN1 : 0) | (in->menu_held ? IN2_ADVANCE : 0));
+    *in0 = (uint8_t)((in->fire ? IN0_FIRE : 0) | (in->thrust ? IN0_THRUST : 0) |
+                     (in->smart_bomb ? IN0_SMART_BOMB : 0) | (in->hyperspace ? IN0_HYPERSPACE : 0) |
+                     (in->start2 ? IN0_START2 : 0) | (in->start ? IN0_START1 : 0) |
+                     (in->reverse ? IN0_REVERSE : 0) | (in->move_y > 0 ? IN0_DOWN : 0));
+    *in1 = in->move_y < 0 ? IN1_UP : 0;
+    *in2 = (uint8_t)((in->coin ? IN2_COIN1 : 0) | (in->menu_held ? IN2_ADVANCE : 0));
+}
+
+static void board_inputs(const InputFrame *in) { panel(in, &g.board.in0, &g.board.in1, &g.board.in2); }
+
+/* ---- the game in C (--c-game) ----------------------------------------------- */
+
+/* The C game (sim/) runs from its power-on state, a frame a tick, and is
+   drawn from its RAM. Its tables still come from the ROM set (plan
+   decision 1: to move to assets/); its sounds are the extracted WAVs, a
+   new command replacing the last as on the sound board. */
+static Game cg;
+static uint8_t cg_data[0x10000], cg_banks[8][0x1000];
+static uint8_t cg_saved[256]; /* the CMOS last saved */
+static int cg_sound[0x20];    /* a clip per sound command; -1 none, -2 silence */
+static int cg_unported;       /* reported once */
+
+static void c_sounds_load(void)
+{
+    for (int i = 0; i < 0x20; i++) cg_sound[i] = -1;
+    if (!g.assets_path[0]) return;
+    char path[1200], line[128];
+    snprintf(path, sizeof path, "%s/sounds/sounds.txt", g.assets_path);
+    FILE *f = fopen(path, "r");
+    if (!f) return;
+    while (fgets(line, sizeof line, f)) {
+        unsigned n;
+        char kind[16];
+        if (line[0] == '#' || sscanf(line, "%x %15s", &n, kind) != 2 || n >= 0x20) continue;
+        if (!strcmp(kind, "none")) {
+            cg_sound[n] = -2;
+            continue;
+        }
+        char file[16];
+        snprintf(file, sizeof file, "%02X.wav", n);
+        cg_sound[n] = audio_load(file, 0, 1.0f);
+        if (!strcmp(kind, "loop")) audio_set_loop(cg_sound[n], 1);
+    }
+    fclose(f);
+}
+
+static void c_start(void)
+{
+    for (unsigned a = 0xD000; a <= 0xFFFF; a++) cg_data[a] = (uint8_t)rom_byte(&g.rom, a);
+    for (unsigned a = 0xC000; a < 0xD000; a++) cg_data[a] = (uint8_t)rom_bank_byte(&g.rom, 2, a - 0xC000);
+    for (int b = 1; b <= 7; b++)
+        for (unsigned a = 0; a < 0x1000; a++) cg_banks[b][a] = (uint8_t)rom_bank_byte(&g.rom, b, a);
+    cg.data = cg_data;
+    for (int b = 1; b <= 7; b++) cg.bank[b] = cg_banks[b];
+    static uint8_t cmos[BOARD_CMOS_SIZE];
+    if (save_load(CMOS_FILE, cmos, sizeof cmos)) { /* blank: the board restores the factory settings */
+        board_init(&g.board, &g.rom, NULL);
+        for (int i = 0; i < PRIME_FRAMES; i++) board_run_frame(&g.board, NULL);
+        memcpy(cmos, g.board.cmos, sizeof cmos);
+    } else {
+        memcpy(cg_saved, cmos, sizeof cg_saved);
+    }
+    game_load_cmos(&cg, cmos);
+    game_power_on(&cg);
+}
+
+static void c_step(const InputFrame *in)
+{
+    panel(in, &cg.in0, &cg.in1, &cg.in2);
+    cg.cra = 0;
+    if (game_frame(&cg) && !cg_unported++)
+        fprintf(stderr, "defender: the C game reached code not ported yet (a step at $%04X)\n", cg.unported);
+    williams_draw_vram(&fb, cg.ram, cg.palette);
+    if (cg.sound_sent >= 0) {
+        int id = cg.sound_sent < 0x20 ? cg_sound[cg.sound_sent] : -1;
+        if (id >= 0) audio_play(id);
+        else if (id == -2) audio_fade_all();
+        cg.sound_sent = -1;
+    }
+    if (memcmp(cg.cmos, cg_saved, sizeof cg_saved) && --g.cmos_wait <= 0) {
+        if (save_store(CMOS_FILE, cg.cmos, sizeof cg.cmos)) fprintf(stderr, "defender: cannot save %s\n", save_path(CMOS_FILE));
+        memcpy(cg_saved, cg.cmos, sizeof cg_saved);
+        g.cmos_wait = CMOS_SAVE_FRAMES;
+    }
 }
 
 /* ---- the controls page ---------------------------------------------------- */
 
-/* The game's own state: $A0BF bit 5 is set from a game's start to its end
-   (high-score display included), and clear all through the attract mode,
-   with or without credits (found with ram_probe.lua, 1 and 2 players). */
-static int game_running(void) { return g.board.ram[0xA0BF] & 0x20; }
+/* The game's own state: `<$BA` ($A0BA) is negative in the attract mode
+   (game over and the high scores included), as the start buttons test it. */
+static int game_running(void) { return !((g.c_game ? cg.ram : g.board.ram)[0xA0BA] & 0x80); }
 
 static bool any_input(const InputFrame *in)
 {
@@ -306,7 +389,10 @@ static void step(const InputFrame *in)
     static bool coin_was;
     g.clock++;
     g.in = *in;
-    if (!g.test_card) {
+    if (g.c_game) {
+        c_step(in);
+        g.idle = game_running() || any_input(in) ? 0 : g.idle + 1;
+    } else if (!g.test_card) {
         board_inputs(in);
         board_run_frame(&g.board, &fb);
         g.idle = game_running() || any_input(in) ? 0 : g.idle + 1;
@@ -517,6 +603,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--screenshot") && i + 1 < argc) screenshot = argv[++i];
         else if (!strcmp(argv[i], "--rom") && i + 1 < argc) rom_arg = argv[++i];
         else if (!strcmp(argv[i], "--test-card")) g.test_card = 1;
+        else if (!strcmp(argv[i], "--c-game")) g.c_game = 1;
         else if (!strcmp(argv[i], "--input") && i + 1 < argc) {
             if (load_script(argv[++i])) return 2;
         }
@@ -527,7 +614,7 @@ int main(int argc, char **argv)
             }
         } else {
             fprintf(stderr,
-                    "usage: %s [--windowed] [--gfx preset] [--rom path] [--test-card]\n"
+                    "usage: %s [--windowed] [--gfx preset] [--rom path] [--test-card] [--c-game]\n"
                     "          [--input script.txt] [--frames N] [--screenshot out.png]\n"
                     "       %s --check-rom <dir|zip>\n"
                     "       %s --dump-rom <dir|zip> <first> <last>\n"
@@ -547,7 +634,10 @@ int main(int argc, char **argv)
         fprintf(stderr, "defender: %s\n", g.rom_error);
     if (assets_find(argv[0], EXTRACT_MANIFEST, g.assets_path, sizeof g.assets_path)) g.assets_path[0] = '\0';
     if (!g.rom.loaded) g.test_card = 1; /* nothing to run: show why */
-    if (!g.test_card) board_start();
+    if (!g.rom.loaded) g.c_game = 0;
+    if (g.test_card) g.c_game = 0;
+    if (g.c_game) c_start();
+    else if (!g.test_card) board_start();
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_EVENTS) != 0) {
         SDL_Log("SDL_Init: %s", SDL_GetError());
@@ -562,6 +652,7 @@ int main(int argc, char **argv)
     }
     input_init();
     if (max_frames < 0) audio_init(argv[0]); /* headless runs stay silent */
+    if (g.c_game) c_sounds_load();
 
     step_ticks = SDL_GetPerformanceFrequency() / FRAME_HZ;
     last = SDL_GetPerformanceCounter();
@@ -570,7 +661,10 @@ int main(int argc, char **argv)
 #endif
     while (run_once()) {}
 
-    if (!g.test_card) save_cmos();
+    if (g.c_game) {
+        if (memcmp(cg.cmos, cg_saved, sizeof cg_saved) && save_store(CMOS_FILE, cg.cmos, sizeof cg.cmos))
+            fprintf(stderr, "defender: cannot save %s\n", save_path(CMOS_FILE));
+    } else if (!g.test_card) save_cmos();
     audio_shutdown();
     input_shutdown();
     video_shutdown();
