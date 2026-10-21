@@ -6,6 +6,7 @@
 #include "sim/humanoids.h"
 #include "sim/pods.h"
 #include "sim/score.h"
+#include "sim/shots.h"
 
 #define LANDERS 0xA112
 #define MUTANTS 0xA115
@@ -60,6 +61,7 @@ int enemy_hit(Game *g, uint16_t handler, uint16_t obj)
     case HIT_POD: return done(pod_hit(g, obj));
     case HIT_SWARMER: return done(swarmer_hit(g, obj));
     case HIT_BOMBER: return done(bomber_hit(g, obj));
+    case HIT_SHOT: return done(shot_hit(g, obj));
     case HUMANOID_ON_GROUND: return humanoid_hit(g, obj, 0);
     case HUMANOID_CARRIED: return humanoid_hit(g, obj, 1);
     }

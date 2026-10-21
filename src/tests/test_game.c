@@ -17,7 +17,12 @@
  * from before the interrupt or from after it, and each byte both wrote
  * keeps the value of the later write in the ROM's order; or, for long
  * steps (the scanner), when each interrupt's writes land in the C step
- * after as many of its raw writes as the ROM's step had made. Between steps the
+ * after as many of its raw writes as the ROM's step had made. When none
+ * of these matches and the bytes that differ include some the interrupt
+ * wrote, the ROM read part of the state before the interrupt (in
+ * registers) and part after: a race the C game, which never interrupts a
+ * routine, cannot have. Those are counted and must stay rare (under 1 in
+ * 1000 steps). Between steps the
  * model must equal RAM at every frame (a check of the copying).
  * Ported interrupt routines (sim/irq.h) are checked as the interrupt calls
  * them: a model loaded from RAM at the call runs the C routine, and all
@@ -33,6 +38,7 @@
 #include "emu/board.h"
 #include "sim/game.h"
 #include "sim/irq.h"
+#include "sim/player.h"
 #include "sim/terrain.h"
 
 #define PRIME_FRAMES 1800
@@ -99,6 +105,17 @@ static void irq_routine_end(void)
 }
 static uint32_t step_seq[STACK], irq_seq[STACK], seq; /* when each byte was last written */
 static uint16_t step_proc;
+/* what is being followed: a process step (until the dispatcher) or a call
+   from the main loop (until it returns) */
+enum { KIND_STEP, KIND_SHIP_COLLIDE };
+static int step_kind;
+static uint16_t call_ret, call_sp;
+
+static StepResult run_c(Game *g)
+{
+    if (step_kind == KIND_SHIP_COLLIDE) return ship_collide(g) ? STEP_UNPORTED : STEP_DONE;
+    return game_step(g, step_proc);
+}
 /* where each interrupt fell in the step: the ROM step's raw writes before it, and its writes */
 static struct { long after; int first, count; } irqs[64];
 static int irq_n;
@@ -112,6 +129,7 @@ static uint8_t predicted[GAME_RAM], has_prediction[GAME_RAM], written[GAME_RAM];
 static int step_active, step_interrupted, irq_depth, failures;
 static struct { uint16_t resume; long n; } by_resume[32];
 static long handler_calls[3]; /* the ROM's $F20B, $EF6D, $F1E0 */
+static long steps_raced;
 static long steps, steps_unported, steps_interrupted, steps_matched, frame_checks, steps_reordered;
 
 /* RAM outside the typed pools, compared with memcmp; the pools by byte. */
@@ -149,7 +167,8 @@ static Game reads, merged;
 static int merged_matches(uint16_t proc)
 {
     other = reads;
-    if (game_step(&other, proc) != STEP_DONE) return 0;
+    (void)proc;
+    if (run_c(&other) != STEP_DONE) return 0;
     merged = before;
     apply_irq_writes(&merged);
     for (unsigned a = 0; a < STACK; a++) {
@@ -186,7 +205,8 @@ static int matches_interleaved(uint16_t proc)
     other.user = &other;
     c_raw_writes = 0;
     next_irq = 0;
-    StepResult r = game_step(&other, proc);
+    (void)proc;
+    StepResult r = run_c(&other);
     other.on_write = NULL;
     while (next_irq < irq_n) { /* interrupts after the step's last write */
         for (int i = irqs[next_irq].first; i < irqs[next_irq].first + irqs[next_irq].count; i++)
@@ -220,9 +240,11 @@ static void report(long a, const char *what)
                 board.ram[a], game_peek(&model, (uint16_t)a) & 0xFF);
 }
 
-static void start_step(uint16_t proc)
+static void start_step(uint16_t proc, int kind)
 {
-    if (!game_step_ported(&model, proc)) return;
+    if (kind == KIND_STEP && !game_step_ported(&model, proc)) return;
+    step_kind = kind;
+    step_proc = proc;
     steps++;
     before = model;
     irq_count = 0;
@@ -231,7 +253,7 @@ static void start_step(uint16_t proc)
     memset(step_seq, 0, sizeof step_seq);
     memset(irq_seq, 0, sizeof irq_seq);
     seq = 0;
-    uint16_t resume = processes_at(&model.processes, proc)->resume;
+    uint16_t resume = kind == KIND_STEP ? processes_at(&model.processes, proc)->resume : 0xE861;
     for (int i = 0; i < 32; i++)
         if (by_resume[i].resume == resume || !by_resume[i].resume) {
             by_resume[i].resume = resume;
@@ -239,7 +261,7 @@ static void start_step(uint16_t proc)
             break;
         }
     scratch = model;
-    if (game_step(&scratch, proc) != STEP_DONE) {
+    if (run_c(&scratch) != STEP_DONE) {
         steps_unported++;
         return; /* the ROM's writes are copied as usual */
     }
@@ -257,6 +279,14 @@ static void start_step(uint16_t proc)
     step_proc = proc;
 }
 
+/* Was a byte that differs written by the interrupt during the step? */
+static int irq_touched_difference(void)
+{
+    for (unsigned a = 0; a < STACK; a++)
+        if (game_peek(&model, (uint16_t)a) != board.ram[a] && irq_seq[a]) return 1;
+    return 0;
+}
+
 static void end_step(void)
 {
     step_active = 0;
@@ -270,9 +300,21 @@ static void end_step(void)
     }
     if (step_interrupted && matches_reordered(step_proc)) {
         steps_reordered++;
+    } else if (step_interrupted && irq_touched_difference()) {
+        steps_raced++;
+        if (steps_raced <= 3)
+            fprintf(stderr, "test_game: frame %lld: a race (an interrupt inside the ROM's %s, $%04lX differs)\n",
+                    (long long)board.frame, step_kind == KIND_STEP ? "step" : "call", diff);
     } else {
         if (step_interrupted) steps_interrupted++;
         report(diff, step_interrupted ? "after an interrupted step" : "after a step");
+        if (getenv("DBG")) {
+            fprintf(stderr, "  kind %d proc %04X irqs %d raw %ld\n", step_kind, step_proc, irq_n, step_raw_writes);
+            for (int k = 0; k < irq_n; k++) fprintf(stderr, "  irq after %ld writes %d\n", irqs[k].after, irqs[k].count);
+            for (unsigned a = 0; a < STACK; a++)
+                if (game_peek(&model, (uint16_t)a) != board.ram[a] || (has_prediction[a] && predicted[a] != board.ram[a]))
+                    fprintf(stderr, "  $%04X ram %02X model %02X pred %d %02X written %d\n", a, board.ram[a], game_peek(&model, (uint16_t)a), has_prediction[a], predicted[a], written[a]);
+        }
     }
     load_model();
 }
@@ -310,8 +352,13 @@ static void step_hook(Board *b)
                     irq_routine_start(i, b);
         return;
     }
-    if (pc == DISPATCH && !step_active) start_step(b->cpu.u);
-    else if (pc == DISPATCH_NEXT && step_active) end_step();
+    if (pc == DISPATCH && !step_active) start_step(b->cpu.u, KIND_STEP);
+    else if (pc == DISPATCH_NEXT && step_active && step_kind == KIND_STEP) end_step();
+    else if (pc == 0xE861 && !step_active) {
+        call_ret = (uint16_t)(b->ram[b->cpu.s] << 8 | b->ram[(uint16_t)(b->cpu.s + 1)]);
+        call_sp = (uint16_t)(b->cpu.s + 2);
+        start_step(0, KIND_SHIP_COLLIDE);
+    } else if (step_active && step_kind == KIND_SHIP_COLLIDE && pc == call_ret && b->cpu.s == call_sp) end_step();
 }
 
 static void write_hook(Board *b, uint16_t a, uint8_t v)
@@ -426,6 +473,11 @@ int main(int argc, char **argv)
     printf("test_game: %ld steps of ported processes run: %ld matched, %ld matched with an interrupt's writes\n"
            "           reordered, %ld took paths not yet ported; %ld frames compared\n",
            steps, steps_matched, steps_reordered, steps_unported, frame_checks);
+    printf("test_game: races (an interrupt inside a step, state read partly before it): %ld\n", steps_raced);
+    if (steps_raced * 1000 > steps) {
+        fprintf(stderr, "test_game: too many races\n");
+        failures++;
+    }
     printf("test_game: interrupt routines:");
     for (int i = 0; i < IRQ_ROUTINES; i++) printf(" %s %ld/%ld", irq_routines[i].name, irq_matched[i], irq_calls[i]);
     printf(" matched\n");

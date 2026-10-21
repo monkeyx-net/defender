@@ -88,8 +88,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   wave's process: arrivals, baiters, the ramp), `baiter.c` (baiters), `pods.c` (pods and
   swarmers), `bombers.c` (bombers), `background.c` (the
   processes running all game: colour cycles, list sorting, shots ageing,
-  the scanner), `player.c` (smart bomb, reverse, HUD icons, saving a
-  wave), `irq.c` (the interrupt's drawing: objects, ship, stars, shots),
+  the scanner), `player.c` (the ship's collisions, smart bomb, reverse,
+  HUD icons, saving a wave), `irq.c` (the interrupt's drawing: objects, ship, stars, shots),
   `terrain.c` (bank 7's terrain: heights, buffers, drawing), `hit.c` (the hit test), `enemies.c` (hit
   handlers, kills), `score.c` (scoring and the score digits); `laser.c`
   also runs the laser as a process step;
@@ -142,7 +142,10 @@ Every change keeps `ctest` green.
   scripted game (writes copied); ported process steps run in C and the
   model must equal RAM when the ROM's step yields (a step an interrupt
   broke into must match with the interrupt's writes all before or all
-  after it, or replayed where they fell among its raw writes). Ported
+  after it, or replayed where they fell among its raw writes; a race the
+  C game cannot have, the ROM reading partly before the interrupt, is
+  counted and must stay under 1 in 1000). Main-loop calls ($E861) are
+  followed like steps, until they return. Ported
   interrupt routines are checked per call: a model loaded from RAM runs
   the C routine and must equal RAM when the ROM's returns (bar <$77-<$78
   and <$13-<$14, where routines keep S). The scratch byte `<$73` and the like are RAM

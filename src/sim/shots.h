@@ -21,4 +21,10 @@ uint16_t shot_create(Game *g, uint16_t from, uint16_t owner, uint16_t data, uint
    or take a random spread (and the ship's speed half the time). 1 if fired. */
 int shot_fire(Game *g, uint16_t from, uint16_t owner);
 
+#define HIT_SHOT 0xE51E
+/* $E51E: a shot touched the ship: 25 points, freed and erased, then it
+   explodes as $F951 at its world x (screen x / 4 + scroll), 2 lines up,
+   script $D4E4. */
+int shot_hit(Game *g, uint16_t shot);
+
 #endif

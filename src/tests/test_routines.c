@@ -27,6 +27,8 @@
  *   - the terrain (bank 7): the world's heights ($C262), its start at a
  *     random scroll ($C015), then following random scrolls ($C092; <$13-<$14,
  *     its S, not compared), forgetting it ($C29A)
+ *   - the ship's collisions ($E861) among enemies, humanoids (on the ground,
+ *     falling: caught) and shots placed around it
  *   - score_add ($D360): random scores (BCD, a third of them small), points (BCD words, the pair
  *     and digit bits), players and extra-life intervals; cases that earn an
  *     extra life (not ported) are counted and skipped
@@ -44,6 +46,7 @@
 #include "sim/lander.h"
 #include "sim/player.h"
 #include "sim/pods.h"
+#include "sim/shots.h"
 #include "sim/humanoids.h"
 #include "sim/irq.h"
 #include "sim/terrain.h"
@@ -111,7 +114,7 @@ static long compare(const char *what, long n)
 {
     if (getenv("DBG_ALL")) {
         int k = 0;
-        for (unsigned a = 0; a < STACK && k < 12; a++)
+        for (unsigned a = 0; a < STACK && k < 40; a++)
             if (game_peek(&model, (uint16_t)a) != board.ram[a]) {
                 unsigned off = a >= OBJECTS_FIRST && a < OBJECTS_FIRST + OBJECTS * OBJECT_SIZE ? (a - OBJECTS_FIRST) % OBJECT_SIZE : 99;
                 fprintf(stderr, "  %s %ld: $%04X (obj +%02X) = %02X, C %02X\n", what, n, a, off, board.ram[a], game_peek(&model, (uint16_t)a));
@@ -654,6 +657,57 @@ static void test_terrain(int cases)
     printf("test_routines: terrain: %ld calls equal the ROM's\n", done);
 }
 
+static void c_collide(uint16_t d, uint16_t x, uint16_t y) { (void)d; (void)x; (void)y; ship_collide(&model); }
+
+static void test_collisions(int cases)
+{
+    long done = 0;
+    for (int n = 0; n < cases; n++) {
+        memcpy(board.ram, game_ram, sizeof game_ram);
+        load_model();
+        shake();
+        model.ram[0xA0BA] = 0;
+        model.processes.current = PROCESS_HEAD; /* the main loop's */
+        uint16_t ship = (uint16_t)((0x20 + rnd(0x50)) << 8 | (0x40 + rnd(0x80)));
+        game_set_word(&model, 0xA0BF, ship);
+        game_set_word(&model, 0xA0BD, rnd(2) ? 0x0300 : 0xFD00);
+        int kind = (int)rnd(3);
+        if (kind == 0) {
+            lander_spawn(&model, (uint8_t)(1 + rnd(3)));
+            bomber_spawn(&model, 1);
+        } else if (kind == 1) {
+            /* humanoids, some falling (an owner process at $F216) */
+            for (int k = 0; k < 3; k++) {
+                uint16_t h = some_humanoid();
+                Object *o = objects_at(&model.objects, h);
+                if (!o || rnd(2)) continue;
+                o->hit = HUMANOID_CARRIED;
+                o->owner = new_process(rnd(3) ? HUMANOID_FALL : HUMANOID_CARRIED_BY_SHIP, h);
+            }
+            model.processes.current = PROCESS_HEAD;
+        } else {
+            /* shots at the ship */
+            lander_spawn(&model, 2);
+            for (uint16_t a = model.objects.screen; a; a = objects_at(&model.objects, a)->link) {
+                Object *o = objects_at(&model.objects, a);
+                o->x = (uint16_t)(game_word(&model, 0xA020) + 0x1000);
+                o->y = (uint16_t)(0x80 << 8);
+                shot_fire(&model, a, model.processes.head);
+            }
+        }
+        /* everything drawn around the ship */
+        for (int l = 0; l < 2; l++)
+            for (uint16_t a = l ? model.objects.shots : model.objects.screen; a; a = objects_at(&model.objects, a)->link) {
+                Object *o = objects_at(&model.objects, a);
+                if (rnd(3)) o->screen = (uint16_t)(ship + (rnd(12) - 6) * 0x100 + rnd(12) - 6);
+            }
+        model.ram[0xA036] = 2; /* the main loop selects bank 2 first ($E81A) */
+        board.bank = 2;
+        if (call_case("ship collisions", n, 0xE861, 0, 0, 0, c_collide) == -1) done++;
+    }
+    printf("test_routines: ship collisions: %ld equal the ROM's\n", done);
+}
+
 static void test_score(int cases)
 {
     long done = 0, extra = 0;
@@ -727,6 +781,7 @@ int main(int argc, char **argv)
     test_wave_start(1000);
     test_irq(3000);
     test_terrain(200);
+    test_collisions(3000);
     if (failures) {
         fprintf(stderr, "test_routines: %d differences\n", failures);
         return 1;

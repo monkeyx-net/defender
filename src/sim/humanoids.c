@@ -174,7 +174,19 @@ int humanoid_hit(Game *g, uint16_t obj, int carried)
     Object *o = objects_at(&g->objects, obj);
     if (!o) return -1;
     if (carried && o->owner) {
-        if (g->ram[TOUCHED]) return -1; /* caught by the ship: with the ship's collisions */
+        if (g->ram[TOUCHED]) {
+            /* caught by the ship: 500 now, carried under it ($F24C) */
+            Process *owner = processes_at(&g->processes, o->owner);
+            if (!owner) return -1;
+            if (owner->resume != HUMANOID_CARRIED_BY_SHIP) {
+                game_sound(g, 0xD4DA);
+                uint16_t bonus = processes_create(&g->processes, BONUS_500, 0, 0);
+                if (!bonus) return -1;
+                game_set_word(g, (uint16_t)(bonus + 7), obj);
+            }
+            owner->resume = HUMANOID_CARRIED_BY_SHIP;
+            return 0;
+        }
         uint16_t owner = o->owner;
         if (humanoid_kill(g, obj)) return -1;
         return processes_kill(&g->processes, owner) ? 1 : -1;

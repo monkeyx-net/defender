@@ -2,6 +2,7 @@
 
 #include "sim/background.h"
 #include "sim/enemies.h"
+#include "sim/hit.h"
 #include "sim/score.h"
 
 #define PLAYERS 0xA08C
@@ -26,6 +27,25 @@ static void icons(Game *g, uint16_t at, uint8_t n, uint8_t max, uint8_t w, uint8
     if (n > max) n = max;
     game_clear(g, at, w, h);
     for (; n; n--, at = (uint16_t)(at + step)) draw(g, picture, at);
+}
+
+int ship_collide(Game *g)
+{
+    uint8_t *r = g->ram;
+    if (r[0xA0BA] & 0x10) return 0;
+    uint16_t at = game_word(g, 0xA0BF);
+    uint16_t picture = (int8_t)r[0xA0BD] < 0 ? 0xF9CB : 0xF9C1;
+    r[0xA0DE]++;
+    int hit = hit_test(g, LIST_SCREEN, at, picture);
+    if (hit < 0) return -1;
+    if (!hit) hit = hit_test(g, LIST_SHOTS, at, picture);
+    if (hit < 0) return -1;
+    if (hit) {
+        if (!processes_create(&g->processes, SHIP_DEATH, 0, 0)) return -1;
+        r[0xA0BA] |= 0x08;
+    }
+    r[0xA0DE] = 0;
+    return 0;
 }
 
 void hud_ships(Game *g)

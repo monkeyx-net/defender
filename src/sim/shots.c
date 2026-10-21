@@ -1,5 +1,8 @@
 #include "sim/shots.h"
 
+#include "sim/explosions.h"
+#include "sim/score.h"
+
 #define SHOT_COUNT 0xA099
 #define SCROLL 0xA020
 #define SHIP_COLUMN 0xA0BF
@@ -56,4 +59,19 @@ int shot_fire(Game *g, uint16_t from, uint16_t owner)
     if (g->ram[RANDOM] > 0x78) s->vx = (uint16_t)(game_word(g, SHIP_SPEED) * 4 + s->vx);
     s->vy = aim(g->ram[RANDOM_LO], g->ram[SHIP_LINE], (uint8_t)s->screen);
     return 1;
+}
+
+int shot_hit(Game *g, uint16_t shot)
+{
+    if (score_add(g, 0x0025)) return -1;
+    g->ram[SHOT_COUNT]--;
+    if (objects_free_shot(&g->objects, shot)) return -1;
+    game_erase_object(g, shot);
+    Object *s = objects_at(&g->objects, shot);
+    s->x = (uint16_t)((s->x >> 2) + game_word(g, SCROLL));
+    s->y = (uint16_t)((uint8_t)((s->y >> 8) - 2) << 8 | (s->y & 0xFF));
+    s->picture = 0xF951;
+    explosion_start(g, shot);
+    game_sound(g, 0xD4E4);
+    return 0;
 }

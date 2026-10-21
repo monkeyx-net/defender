@@ -337,6 +337,18 @@ is $A0 throughout, so `<$xx` is $A0xx.
   handler. $EEBA fires picture $F95B ($E4D9, handler $E51E) at the ship
   (`<$BF` column, `<$C0` line) with a random spread of -16..15, plus 4 x
   the ship's speed when `<$DF` > $78; speeds are the 8-bit differences x 4.
+- **The ship's collisions** ($E861, main loop; ported in `player.c`):
+  with bank 2 selected, the ship's picture ($F9C1 / $F9CB by `<$BD`) at
+  where it was drawn (`<$BF-<$C0`) is hit-tested against the screen list,
+  then the shots ($E6BD), with `<$DE` incremented meanwhile so the
+  handlers know it is the ship. Any hit starts the ship's death (process
+  $DA46) and sets `<$BA` bit 3. Enemies touched die as when shot; a
+  humanoid on the ground declines (no hit); a falling or carried one
+  ($ED91, owner set) is caught: script $D4DA and a 500 bonus ($EE73) unless
+  its owner already resumes at $F24C, which it then does (no hit). A shot
+  touched ($E51E): 25 points, `<$99` - 1, freed ($D0F2) and erased, then
+  at world x (screen x / 4 + scroll), 2 lines up, it explodes as $F951,
+  script $D4E4.
 - **Smart bomb** ($E8C1, ported: `src/sim/player.c`): not while one is
   going (`<$9A`) or with none left (the player block `<$8D` +9,
   decremented; $D680 redraws the HUD); script $D4D2. It calls the hit
@@ -537,7 +549,12 @@ Found by comparing instruction traces (`mame_emu`):
   the interrupt, and each byte keeps the later write in the ROM's order;
   or (long steps such as the scanner) each interrupt's writes land in a
   rerun of the C step after as many of its raw writes as the ROM's step
-  had made (`Game.on_write`).
+  had made (`Game.on_write`). When none matches and the bytes that differ
+  include some the interrupt wrote, the ROM read part of the state before
+  the interrupt (into registers) and part after: a race the C game, which
+  never interrupts a routine, cannot have; counted, at most 1 in 1000
+  steps (1 in the scripted minute, in a ship collision). Calls from the
+  main loop ($E861) are followed the same way, until they return.
   The scripted minute: all 3611 steps match (9 interrupted); `game_hunter`
   (rapid fire, sweeping, 12000 frames): all 12850 (19 interrupted, 3 on
   paths not ported: a humanoid landing safely). Not reached yet: a lander
@@ -548,7 +565,7 @@ Found by comparing instruction traces (`mame_emu`):
   routine, and all of RAM must match when the ROM's returns (no
   interleaving: interrupts are masked inside). The scripted minute: 8937
   object-band draws, 8937 ship draws, 4469 star frames, 4469 shot moves,
-  2495 terrain updates.
+  2495 terrain updates; the ship's collisions at each of the 4204 ticks.
 - **Routines on chosen inputs** (label `rom`): `routines` runs a ROM
   routine on the emulated CPU (interrupts masked) until it returns and the
   C one on a model of the same RAM; all of RAM must match. Process steps
@@ -562,7 +579,9 @@ Found by comparing instruction traces (`mame_emu`):
   around the ship (its $280 and 10-line edges): 2000; every arrival
   routine called on the ROM and in C from random states (3000), then the
   steps of the swarmers, bombers and baiters made (about 2700) and every
-  hit handler on them (about 5600). The C model reads
+  hit handler on them (about 5600); the ship's collisions among enemies,
+  humanoids (falling, caught) and shots (3000; with bank 2 selected, as
+  the main loop does). The C model reads
   banks 1, 2, 3 and 7 for their tables (`Game.bank`).
 - **To add with the C game** (as Robotron's 3.2): the C game and the
   emulated board run the same inputs side by side and their state (objects,

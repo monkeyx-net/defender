@@ -27,6 +27,12 @@
 #define REVERSE_HELD 0xE8AE
 #define REVERSE_DONE 0xE8BC
 
+/* $E861, the main loop's: the ship's picture where it was drawn against
+   the screen list, then the shots (`<$DE` set meanwhile: the handlers know
+   it is the ship); a hit starts its death (process $DA46, `<$BA` | 8). 0,
+   or -1 if a handler is not ported. */
+int ship_collide(Game *g);
+#define SHIP_DEATH 0xDA46
 void hud_ships(Game *g);
 void hud_bombs(Game *g);
 void wave_save(Game *g);
