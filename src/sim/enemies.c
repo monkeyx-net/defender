@@ -19,7 +19,7 @@ int enemy_kill(Game *g, uint16_t obj, uint16_t points, uint16_t script, int free
 {
     if (!processes_kill(&g->processes, game_word(g, (uint16_t)(obj + 6)))) return -1;
     if (free && objects_free(&g->objects, obj)) return -1;
-    if (score_add(g, points)) return -1;
+    score_add(g, points);
     game_erase_object(g, obj);
     explosion_start(g, obj);
     game_sound(g, script);

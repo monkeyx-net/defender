@@ -46,8 +46,8 @@
  *     with random fire and stick, then the explosions' tick ($FD2D): the
  *     initials entered and sorted in, the hall of fame, the demo, the logo
  *   - score_add ($D360): random scores (BCD, a third of them small), points (BCD words, the pair
- *     and digit bits), players and extra-life intervals; cases that earn an
- *     extra life (not ported) are counted and skipped
+ *     and digit bits), players and extra-life intervals (those that earn
+ *     one counted)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -306,7 +306,7 @@ static void test_wave_steps(int cases)
         }
         r[0xA119] = (uint8_t)rnd(14);
         r[0xA0AE] = (uint8_t)rnd(0x14);
-        r[0xA024] = (uint8_t)rnd(0xF0);
+        r[0xA024] = (uint8_t)(rnd(4) ? rnd(0x100) : 0xEF + rnd(3)); /* the minute: at $F0 the counter */
         if (rnd(2)) r[HUMANOIDS_LEFT] = 0;      /* mutants instead of landers */
         r[0xA0DF] = (uint8_t)rnd(256);
         r[0xA0E0] = (uint8_t)rnd(256);
@@ -1041,10 +1041,9 @@ static void test_score(int cases)
         board.ram[0xA08A] = (uint8_t)rnd(256);
         uint16_t points = (uint16_t)((rnd(4) << 9 | rnd(2) << 8) | bcd());
         load_model();
-        if (score_add(&model, points)) {
-            extra++;
-            continue;
-        }
+        uint8_t ships = (uint8_t)game_peek(&model, (uint16_t)(player + 7));
+        score_add(&model, points);
+        if (game_peek(&model, (uint16_t)(player + 7)) != ships) extra++;
         if (rom_call(0xD360, points)) {
             fprintf(stderr, "test_routines: $D360 did not return\n");
             failures++;
@@ -1053,7 +1052,7 @@ static void test_score(int cases)
         compare("score_add", n);
         done++;
     }
-    printf("test_routines: score_add: %ld cases equal the ROM's, %ld extra lives skipped\n", done, extra);
+    printf("test_routines: score_add: %ld cases equal the ROM's, %ld of them extra lives\n", done, extra);
 }
 
 int main(int argc, char **argv)

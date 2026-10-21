@@ -105,7 +105,7 @@ StepResult bomber_step(Game *g, uint16_t proc)
 int bomber_hit(Game *g, uint16_t obj)
 {
     if (objects_free(&g->objects, obj)) return -1;
-    if (score_add(g, 0x0125)) return -1;
+    score_add(g, 0x0125);
     game_erase_object(g, obj);
     explosion_start(g, obj);
     game_sound(g, 0xD502);

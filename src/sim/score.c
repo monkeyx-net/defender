@@ -1,5 +1,8 @@
 #include "sim/score.h"
 
+#include "sim/cmos.h"
+#include "sim/player.h"
+
 #define PLAYER 0xA08B          /* <$8B: 1 or 2 */
 #define SCORED 0xA08A          /* <$8A: a 1 is shifted in for every score */
 #define SCRATCH 0xA073         /* <$73-<$74 */
@@ -66,7 +69,7 @@ void score_draw_player(Game *g, uint8_t player)
     g->ram[BANK] = bank;
 }
 
-int score_add(Game *g, uint16_t points)
+void score_add(Game *g, uint16_t points)
 {
     g->ram[SCORED] = (uint8_t)(g->ram[SCORED] << 1 | 1);
     uint8_t hi = (uint8_t)(points >> 8), lo = (uint8_t)points;
@@ -90,8 +93,18 @@ int score_add(Game *g, uint16_t points)
         /* $D3CA: the score (+1..+3) against the next life's (+4..+6) */
         uint16_t s = game_word(g, (uint16_t)(x + 1)), n = game_word(g, (uint16_t)(x + 4));
         int below = s != n ? s < n : game_peek(g, (uint16_t)(x + 3)) < game_peek(g, (uint16_t)(x + 6));
-        if (!below) return -1; /* an extra life: not ported yet */
+        if (!below) { /* an extra life: the next at [<$AB-<$AC] more (+4, +5) */
+            int c = 0;
+            game_poke(g, (uint16_t)(x + 5), bcd_add((uint8_t)game_peek(g, (uint16_t)(x + 5)), g->ram[EXTRA_LIFE + 1], &c));
+            game_poke(g, (uint16_t)(x + 4), bcd_add((uint8_t)game_peek(g, (uint16_t)(x + 4)), g->ram[EXTRA_LIFE], &c));
+            game_poke(g, (uint16_t)(x + 7), (uint8_t)(game_peek(g, (uint16_t)(x + 7)) + 1));
+            game_poke(g, (uint16_t)(x + 9), (uint8_t)(game_peek(g, (uint16_t)(x + 9)) + 1));
+            hud_ships(g);
+            hud_bombs(g);
+            game_sound(g, 0xD4B0);
+            g->ram[BANK] = 3; /* $F51C: left selected */
+            bookkeep(g, 5, 1);
+        }
     }
     score_draw(g);
-    return 0;
 }

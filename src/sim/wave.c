@@ -1,6 +1,7 @@
 #include "sim/wave.h"
 
 #include "sim/baiter.h"
+#include "sim/cmos.h"
 #include "sim/death.h"
 #include "sim/flow.h"
 #include "sim/player.h"
@@ -175,7 +176,11 @@ StepResult wave_step(Game *g, uint16_t proc)
     }
     if (r[0xA0AE] < 0x10) r[0xA0AE]++;
     uint8_t minute = (uint8_t)(r[0xA024] + 1);
-    if (minute > 0xF0) return STEP_UNPORTED; /* the bookkeeping counter */
+    if (minute > 0xF0) { /* $F0 steps of 15 ticks: a minute played (bank 3 left selected) */
+        r[0xA036] = 3;
+        bookkeep(g, 6, 1);
+        minute = 0;
+    }
     r[0xA024] = minute;
     uint8_t ramp = (uint8_t)(game_peek(g, (uint16_t)(proc + 7)) - 1);
     game_poke(g, (uint16_t)(proc + 7), ramp);

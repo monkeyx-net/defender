@@ -120,7 +120,7 @@ StepResult swarmer_step(Game *g, uint16_t proc, int aim)
 int pod_hit(Game *g, uint16_t obj)
 {
     if (objects_free(&g->objects, obj)) return -1;
-    if (score_add(g, 0x0210)) return -1;
+    score_add(g, 0x0210);
     game_erase_object(g, obj);
     explosion_start(g, obj);
     game_sound(g, 0xD4F3);
@@ -139,7 +139,7 @@ int swarmer_hit(Game *g, uint16_t obj)
     o->y = (uint16_t)((uint8_t)((o->y >> 8) - 2) << 8 | (o->y & 0xFF));
     o->picture = 0xF8E2;
     explosion_start(g, obj);
-    if (score_add(g, 0x0115)) return -1;
+    score_add(g, 0x0115);
     game_sound(g, 0xD516);
     return 0;
 }

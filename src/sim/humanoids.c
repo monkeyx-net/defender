@@ -148,7 +148,7 @@ StepResult bonus_start(Game *g, uint16_t proc, int five_hundred)
     uint16_t obj = objects_alloc(&g->objects);
     if (!obj) return STEP_UNPORTED;
     objects_setup(&g->objects, obj, proc, five_hundred ? 0xF9E7 : 0xF9DD, 0xEDBC, 0);
-    if (score_add(g, five_hundred ? 0x0150 : 0x0125)) return STEP_UNPORTED;
+    score_add(g, five_hundred ? 0x0150 : 0x0125);
     Object *o = objects_at(&g->objects, obj), *h = objects_at(&g->objects, game_word(g, (uint16_t)(proc + 7)));
     if (!h) return STEP_UNPORTED;
     o->vx = game_word(g, SHIP_SPEED);

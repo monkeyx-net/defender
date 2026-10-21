@@ -184,7 +184,7 @@ static StepResult bonus_humanoid(Game *g, uint16_t proc, uint16_t x)
     x = (uint16_t)(x + 0x0400);
     uint8_t wave = (uint8_t)game_peek(g, (uint16_t)(game_word(g, 0xA08D) + 8));
     if (wave >= 5) wave = 5;
-    if (score_add(g, (uint16_t)(0x0100 | (uint8_t)(wave << 4)))) return STEP_UNPORTED;
+    score_add(g, (uint16_t)(0x0100 | (uint8_t)(wave << 4)));
     game_set_word(g, (uint16_t)(proc + 7), x);
     return sleep(g, 4, WAVE_END_BONUS);
 }

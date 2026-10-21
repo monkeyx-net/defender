@@ -63,7 +63,7 @@ int shot_fire(Game *g, uint16_t from, uint16_t owner)
 
 int shot_hit(Game *g, uint16_t shot)
 {
-    if (score_add(g, 0x0025)) return -1;
+    score_add(g, 0x0025);
     g->ram[SHOT_COUNT]--;
     if (objects_free_shot(&g->objects, shot)) return -1;
     game_erase_object(g, shot);

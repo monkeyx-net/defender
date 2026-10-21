@@ -250,8 +250,8 @@ is $A0 throughout, so `<$xx` is $A0xx.
   comes ($EA80) while `<$A119` < 12. Every [$A100] steps ($A117), or with
   no lander left, min([$A101], `<$FB`) landers arrive while under 8 are
   alive ($EF9C). `<$AE` counts to $10. `<$24` counts steps; past $F0 (a
-  minute) bank 3's $C00F adds to a CMOS bookkeeping counter (B = 6; to
-  port with the CMOS) and leaves bank 3 selected. Every 40 steps ($DEEC,
+  minute) bank 3's $C00F adds 1 to CMOS bookkeeping counter 6, leaves
+  bank 3 selected, and it starts again from 0 (ported). Every 40 steps ($DEEC,
   B = 2) the settings from $A0FB ramp: bank 7's table at [$C011]-[$C013],
   8 bytes per setting (max, min, deltas by column B), kept within. Wave
   start ($DC1E): the humanoid walker, the table cleared, the
@@ -669,7 +669,8 @@ is $A0 throughout, so `<$xx` is $A0xx.
   low bit shifts the low byte up a digit, its other bits pick the byte
   pair; BCD with DAA; `<$8A` gets a 1 shifted in. Every [`<$AB-<$AC`]
   points (BCD; 0 = none) a ship and a smart bomb, the HUD redrawn, script
-  $D4B0 and bank 3's $C00F (to port). $D3D9 draws the 6 digits ($0F1C for
+  $D4B0 and bank 3's $C00F (counter 5, bank 3 left selected); the next
+  life's score +4..+5 moves on by `<$AB-<$AC` (+6 kept), once a call. $D3D9 draws the 6 digits ($0F1C for
   player 1, $711C for 2), 4 columns apart, from bank 2's font ($C000
   points at '0'; $F522 copies, $F57B clears leading zeros but the last 2).
 - **Reverse** ($E897, once per press; ported in `player.c`): `<$BB` = -`<$BD`; the ship turns
