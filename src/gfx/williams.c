@@ -1,8 +1,8 @@
 #include "gfx/williams.h"
 
 #include <math.h>
+#include <string.h>
 
-#include "gfx/blit.h"
 
 /* MAME compute_resistor_weights(0, 255, -1.0, ...) with no pull-ups or
    pull-downs: each bit's weight is its conductance, scaled so that every
@@ -28,11 +28,17 @@ uint32_t williams_rgb(uint8_t entry)
 void williams_draw_vram(Framebuffer *fb, const uint8_t *vram, const uint8_t palette[16])
 {
     uint32_t rgb[16];
-    for (int i = 0; i < 16; i++) rgb[i] = williams_rgb(palette[i]);
-    for (int y = 0; y < FB_HEIGHT; y++)
-        for (int x = 0; x < FB_WIDTH; x++) {
-            int vx = x + WILLIAMS_VISIBLE_X, vy = y + WILLIAMS_VISIBLE_Y;
+    for (int i = 0; i < 16; i++) rgb[i] = 0xFF000000u | williams_rgb(palette[i]);
+    const int s = fb->scale;
+    for (int y = 0; y < FB_HEIGHT; y++) {
+        int vy = y + WILLIAMS_VISIBLE_Y;
+        uint32_t *row = fb_row(fb, y * s);
+        for (int x = 0; x < FB_WIDTH; x++) { /* a row at a time, as the board draws its lines */
+            int vx = x + WILLIAMS_VISIBLE_X;
             uint8_t b = vram[(vx >> 1) * 256 + vy];
-            fill_rectf(fb, x, y, 1, 1, rgb[vx & 1 ? b & 0x0F : b >> 4]);
+            uint32_t c = rgb[vx & 1 ? b & 0x0F : b >> 4];
+            for (int i = 0; i < s; i++) row[x * s + i] = c;
         }
+        for (int i = 1; i < s; i++) memcpy(fb_row(fb, y * s + i), row, (size_t)fb->w * sizeof *row);
+    }
 }
