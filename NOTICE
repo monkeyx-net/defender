@@ -4,11 +4,6 @@ Copyright 2026 monkeyx-net
 The source code of this project is licensed under the Apache License,
 Version 2.0 (see LICENSE).
 
-Parts of the source (platform layer, asset loaders, framebuffer, blitter,
-pixel-art scalers and enhanced graphics) come from the Robotron: 2084
-native SDL2 port, Copyright 2025-2026 Steven Hatch, under the same license,
-by way of the Joust native SDL2 port (Copyright 2026 monkeyx-net).
-
 THIRD-PARTY MATERIAL NOT COVERED BY THAT LICENSE
 
 Defender (1981) was created by Eugene Jarvis and Larry DeMar and published
