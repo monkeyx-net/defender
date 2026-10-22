@@ -14,7 +14,7 @@ env:
 jobs:
 
   # ---------------------------------------------------------------------------
-  # 0. Read version from CMakeLists.txt; skip everything if already released
+  # 0. Read version from CHANGELOG.md; skip everything if already released
   # ---------------------------------------------------------------------------
   version:
     name: Read version
@@ -31,10 +31,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(sed -nE 's/^project\(defender VERSION ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt)
-          test -n "${VERSION}"
+          VERSION=$(grep -m1 '^### ' CHANGELOG.md \
+            | sed -nE 's/^### v?([0-9]+\.[0-9]+\.[0-9]+).*/\1/p')
+          if [ -z "${VERSION}" ]; then
+            echo "::error::The first '### ' heading of CHANGELOG.md must be '### vX.Y.Z (date)'."
+            exit 1
+          fi
           echo "version=${VERSION}"  >> $GITHUB_OUTPUT
           echo "tag=v${VERSION}"     >> $GITHUB_OUTPUT
+          echo "Releasing v${VERSION}"
+
+          CMAKE_VERSION=$(sed -nE 's/^project\(defender VERSION ([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt)
+          if [ "${CMAKE_VERSION}" != "${VERSION}" ]; then
+            echo "::error::CHANGELOG.md says v${VERSION} but CMakeLists.txt says project(VERSION ${CMAKE_VERSION}). Bump both."
+            exit 1
+          fi
 
           if [ "${{ github.event_name }}" = "push" ] && \
              gh release view "v${VERSION}" > /dev/null 2>&1; then
@@ -136,7 +147,49 @@ jobs:
           path: build/packages/*.zip
 
   # ---------------------------------------------------------------------------
-  # 3. Web (Emscripten). CI has no ROM set: the build shows the test card.
+  # 3. macOS arm64 (Homebrew SDL2): tarball
+  # ---------------------------------------------------------------------------
+  build-macos:
+    name: Build macOS (arm64)
+    needs: version
+    if: needs.version.outputs.exists == 'false' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+    steps:
+      - name: Install dependencies
+        run: brew install ccache sdl2 pkg-config
+
+      - uses: actions/checkout@v4
+
+      - name: Cache CCACHE
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: macos-arm64-ccache-${{ github.sha }}
+          restore-keys: |
+            macos-arm64-ccache-
+
+      - name: Build
+        run: |
+          cmake -S . -B build -DDEFENDER_DEV_ASSETS=OFF -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          cmake --build build -j
+
+      # CI has no ROM set, so only the always-run tests (enhance)
+      - name: Test
+        working-directory: build
+        run: ctest --output-on-failure
+
+      - name: Package archive
+        run: cmake --build build --target package_macos
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.GAME_NAME }}-macOS-arm64
+          path: build/packages/*.tar.gz
+
+  # ---------------------------------------------------------------------------
+  # 4. Web (Emscripten). CI has no ROM set: the build shows the test card.
   # ---------------------------------------------------------------------------
   build-web:
     name: Build Web
@@ -161,11 +214,11 @@ jobs:
           path: "*.zip"
 
   # ---------------------------------------------------------------------------
-  # 4. Publish GitHub Release with all artifacts
+  # 5. Publish GitHub Release with all artifacts
   # ---------------------------------------------------------------------------
   release:
     name: Publish GitHub Release
-    needs: [version, build-linux, build-windows, build-web]
+    needs: [version, build-linux, build-windows, build-macos, build-web]
     if: github.event_name == 'push' && needs.version.outputs.exists == 'false'
     runs-on: ubuntu-latest
     permissions:

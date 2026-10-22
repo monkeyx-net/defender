@@ -1,7 +1,7 @@
 # Defender - native SDL2 port (work in progress)
 
 A C11 / SDL2 port of the 1981 Williams arcade game for Linux handhelds
-(PortMaster: ArkOS, ROCKNIX, muOS, Knulli), desktops (Linux, Windows) and the
+(PortMaster: ArkOS, ROCKNIX, muOS, Knulli), desktops (Linux, Windows, macOS) and the
 web, checked against the original ROM running in MAME.
 
 **Status:** playable. The game is rewritten in C, like the Robotron port,
@@ -137,6 +137,14 @@ cmake --build build --target package_windows
 
 The tests use POSIX calls, so on Windows only the game is built.
 
+### macOS (Homebrew)
+
+```bash
+brew install sdl2 pkg-config
+cmake -S . -B build -DDEFENDER_DEV_ASSETS=OFF && cmake --build build -j
+cmake --build build --target package_macos   # defender-<version>-macos-<arch>.tar.gz
+```
+
 ### Web (Emscripten)
 
 With the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html)
@@ -189,8 +197,9 @@ ctest --test-dir build -L mame      # needs MAME 0.289 and the ROM set
 `.github/workflows/build.yml` runs on every push and pull request to `main`,
 and by hand (Actions > Build > Run workflow):
 
-1. **Version:** reads `project(defender VERSION x.y.z)` from `CMakeLists.txt`.
-   On a push, if the release `vx.y.z` already exists, the builds are skipped.
+1. **Version:** reads `### vx.y.z` (the first `###` heading) from
+   `CHANGELOG.md` and checks it equals `project(defender VERSION x.y.z)` in
+   `CMakeLists.txt`. On a push, if the release `vx.y.z` already exists, the builds are skipped.
 2. **Linux x86_64 and aarch64:** in an Ubuntu 20.04 container (GCC 9,
    SDL 2.0.10, glibc 2.31 for PortMaster) on GitHub's x86_64 and arm64
    runners, with ccache: build with `DEFENDER_DEV_ASSETS=OFF`, run `ctest`
@@ -198,15 +207,17 @@ and by hand (Actions > Build > Run workflow):
    PortMaster archives.
 3. **Windows x86_64:** MSYS2 MinGW64 with Ninja; builds the game, copies the
    MinGW DLLs it links (SDL2.dll) next to it and makes the Windows zip.
-4. **Web:** Emscripten; zips `build-web/web` as `defender-<version>-web.zip`
+4. **macOS arm64:** Homebrew SDL2 with ccache; build, run `ctest`, make the
+   macOS tarball.
+5. **Web:** Emscripten; zips `build-web/web` as `defender-<version>-web.zip`
    (no ROM: the page shows the test card until a ROM is added).
-5. **Release:** on a push whose version has no release yet, downloads every
+6. **Release:** on a push whose version has no release yet, downloads every
    build's archives and publishes GitHub release `vx.y.z` with generated
    notes.
 
 Every job uploads its archives as workflow artifacts. To publish a release,
-bump the version in `CMakeLists.txt` and push to `main`. (This repo has no
-GitHub remote yet, so the workflow has not run.)
+add a `### vx.y.z (date)` section at the top of `CHANGELOG.md`, bump the
+version in `CMakeLists.txt` to match and push to `main`.
 
 ## License
 

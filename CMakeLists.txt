@@ -1,7 +1,7 @@
 # Native SDL2 Defender for Linux handhelds and desktops (aarch64, x86_64),
 # Windows (MinGW) and the web (Emscripten). See DEFENDER_PORT_PLAN.md.
 cmake_minimum_required(VERSION 3.13)
-project(defender VERSION 0.1.0 LANGUAGES C)
+project(defender VERSION 0.2.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -134,8 +134,8 @@ if(EMSCRIPTEN)
 endif()
 
 # Release archives: cmake --build build --target package_linux / package_portmaster /
-# package_windows (configure release builds with -DDEFENDER_DEV_ASSETS=OFF)
-foreach(kind linux portmaster windows)
+# package_windows / package_macos (configure release builds with -DDEFENDER_DEV_ASSETS=OFF)
+foreach(kind linux portmaster windows macos)
   add_custom_target(package_${kind}
     COMMAND ${CMAKE_COMMAND} -DKIND=${kind} -DSRC=${CMAKE_SOURCE_DIR} -DBIN=${CMAKE_BINARY_DIR}
       -DGAME=$<TARGET_FILE:defender> -DARCH=${CMAKE_SYSTEM_PROCESSOR} -DVERSION=${PROJECT_VERSION}
