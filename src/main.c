@@ -16,7 +16,7 @@
  * --frames N stops after N updates; with --screenshot the last frame is
  * written as a PNG (use SDL_VIDEODRIVER=dummy to run headless).
  * --input replays scripted controls: lines of "<frame> [coin] [start] [start2]
- * [up] [down] [thrust] [reverse] [fire] [bomb] [hyper] [menu]", each holding
+ * [up] [down] [thrust] [reverse] [fire] [bomb] [hyper] [menu] [reset]", each holding
  * from that frame until the next line (live controls still quit).
  * --dump-rom prints "ADDR BYTE" lines (hex) for main-CPU addresses first..last
  * in the fixed ROM, and "B:ADDR BYTE" for each ROM bank B (1-7) where the
@@ -153,6 +153,7 @@ static void draw_scene(Framebuffer *t)
     lamp(t, 74, 100, "START", in->start);
     lamp(t, 122, 100, "2P START", in->start2);
     lamp(t, 182, 100, "MENU", in->menu_held);
+    lamp(t, 222, 100, "RESET", in->score_reset);
     snprintf(line, sizeof line, "COINS %d", g.coins);
     debug_text(t, 30, 110, line, WHITE);
 
@@ -210,9 +211,10 @@ static int in_operator, masked_frames;
 
 /* The port's controls as the cabinet's switches (emu/board.h). Auto-up is a
    toggle inside the coin door, left on: the operator program counts an
-   advance only with it on. In the operator program up / down are the
-   high-score reset switch ("make change") with auto-up on / off (a value
-   up / down). */
+   advance only with it on. F6 is the High Score Reset switch (today's high
+   scores reset, in the attract mode); in the operator program up / down
+   are that switch ("make change") with auto-up on / off (a value up /
+   down). */
 static void panel(const InputFrame *in, uint8_t *in0, uint8_t *in1, uint8_t *in2)
 {
     *in0 = (uint8_t)((in->fire ? IN0_FIRE : 0) | (in->thrust ? IN0_THRUST : 0) |
@@ -221,7 +223,7 @@ static void panel(const InputFrame *in, uint8_t *in0, uint8_t *in1, uint8_t *in2
                      (in->reverse ? IN0_REVERSE : 0) | (in->move_y > 0 ? IN0_DOWN : 0));
     *in1 = in->move_y < 0 ? IN1_UP : 0;
     *in2 = (uint8_t)((in->coin ? IN2_COIN1 : 0) | (in->menu_held ? IN2_ADVANCE : 0));
-    if (in_operator && in->move_y) *in2 |= IN2_HIGH_SCORE_RESET;
+    if (in->score_reset || (in_operator && in->move_y)) *in2 |= IN2_HIGH_SCORE_RESET;
     if (!(in_operator && in->move_y > 0)) *in2 |= IN2_AUTO_UP;
 }
 
@@ -391,7 +393,7 @@ static int game_running(void) { return !((g.c_game ? cg.ram : g.board.ram)[0xA0B
 static bool any_input(const InputFrame *in)
 {
     return in->move_y || in->thrust || in->reverse || in->fire || in->smart_bomb || in->hyperspace || in->coin ||
-           in->start || in->start2 || in->menu_held;
+           in->start || in->start2 || in->menu_held || in->score_reset;
 }
 
 static bool controls_page_up(void)
@@ -407,11 +409,11 @@ static const struct { const char *what, *pad, *keys; } CONTROLS[] = {
     { "REVERSE", "L1", "Z" },
     { "SMART BOMB", "X", "C" },
     { "HYPERSPACE", "Y", "V, SHIFT" },
-    { "", "", "" },
     { "COIN", "SELECT", "5" },
     { "1 PLAYER START", "START", "1, ENTER" },
     { "2 PLAYER START", "L1+START", "2" },
     { "OPERATOR MENU", "SELECT+R1", "F2" },
+    { "SCORE RESET", "", "F6" },
     { "GRAPHICS", "SELECT+L1", "F3 (F4 GLOW, F5 CRT)" },
     { "EXIT", "HOLD SELECT+START", "ESC" },
 };
@@ -610,6 +612,7 @@ static int load_script(const char *path)
             else if (!strcmp(tok, "start")) l->in.start = true;
             else if (!strcmp(tok, "start2")) l->in.start2 = true;
             else if (!strcmp(tok, "menu")) l->in.menu_held = true;
+            else if (!strcmp(tok, "reset")) l->in.score_reset = true;
             else if (!strcmp(tok, "up")) l->in.move_y = -1;
             else if (!strcmp(tok, "down")) l->in.move_y = 1;
             else if (!strcmp(tok, "thrust")) l->in.thrust = true;

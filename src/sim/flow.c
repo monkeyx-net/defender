@@ -1,5 +1,7 @@
 #include "sim/flow.h"
 
+#include "sim/boot.h"
+
 #include "sim/background.h"
 #include "sim/cmos.h"
 #include "sim/player.h"
@@ -168,6 +170,12 @@ StepResult flow_step(Game *g, uint16_t proc, uint16_t resume)
         coin_inserted(g, entry == 0xC012 ? 1 : entry == 0xC018 ? 2 : 3);
         return end(g);
     }
+    case HIGH_SCORE_RESET:
+        if (r[STATE] & 0x80) {
+            scores_today_reset(g);
+            game_poke(g, 0xA162, (uint8_t)(game_peek(g, 0xA162) + 1));
+        }
+        return end(g);
     case START_1:
     case START_2:
         if (!(r[STATE] & 0x80)) return end(g);

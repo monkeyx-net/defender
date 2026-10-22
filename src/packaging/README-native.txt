@@ -37,6 +37,8 @@ Controls (one control panel: the players take turns, as on the cabinet)
   Start: Start / 1 or Enter;  2-player start: L1+Start / 2
   Operator menu: Select+R1 / F2 (the cabinet's Advance button); in its
     pages it steps to the next, and up/down change the value shown
+  Reset today's high scores: F6 (the cabinet's High Score Reset button,
+    in the attract mode)
   Graphics: Select+L1 / F3 steps the presets, F4 glow, F5 CRT scanlines
   Exit: hold Select+Start for 1 second / Esc
   Every connected pad drives the panel.

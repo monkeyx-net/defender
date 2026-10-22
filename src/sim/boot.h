@@ -16,5 +16,8 @@
 
 /* The game's state at power-on from its CMOS (g->data, bank[] and cmos set). */
 void game_power_on(Game *g);
+/* Bank 3 $CCC1 ($C033): today's high scores from bank 3's $CECF, 48 bytes
+   into $B260 as nibbles (bank 3 left selected, as $F507 before it). */
+void scores_today_reset(Game *g);
 
 #endif

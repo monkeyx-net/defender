@@ -69,7 +69,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   extracted WAVs (its tables still from the ROM set; Advance in its attract
   mode hands its RAM and CMOS to the board for the operator pages, and it
   restarts from power-on after them), the operator switches (auto-up held
-  on; up / down are high-score reset in the operator pages), `--input`, `--frames`, `--screenshot`, `--rom`, `--check-rom`, `--dump-rom`,
+  on; F6 high-score reset; up / down are high-score reset in the operator
+  pages), `--input`, `--frames`, `--screenshot`, `--rom`, `--check-rom`, `--dump-rom`,
   `--extract`
 - `emu/` - the emulated hardware: `m6809.c` (main CPU), `pia6821.c`,
   `board.c` (Defender's main board: memory map with ROM banks and the I/O
@@ -97,8 +98,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   HUD icons, saving a wave), `irq.c` (the interrupt's drawing: objects, ship, stars, shots),
   `terrain.c` (bank 7's terrain: heights, buffers, drawing), `frame.c`
   (a frame: the interrupt's halves, the main loop's tick, the controls),
-  `cmos.c` (CMOS, bookkeeping, coins and credits), `flow.c` (coins and
-  the start buttons' processes, a start, a player's wave set-up, the HUD,
+  `cmos.c` (CMOS, bookkeeping, coins and credits), `flow.c` (coins, the
+  start buttons' and the high-score reset's processes, a start, a player's wave set-up, the HUD,
   screen clears), `text.c` (the text printer), `turn.c` (a player's turn:
   reset, set-up, the wave's start), `death.c` (hyperspace, a death and
   its explosion, a wave's end, the next player, game over), `attract.c`

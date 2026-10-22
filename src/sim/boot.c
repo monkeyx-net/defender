@@ -6,6 +6,17 @@
 #include "sim/cmos.h"
 #include "sim/turn.h"
 
+void scores_today_reset(Game *g)
+{
+    g->ram[0xA036] = 3;
+    for (int i = 0; i < 48; i++) {
+        uint8_t v = game_read_bank(g, 3, (uint16_t)(0xCECF + i));
+        uint16_t at = (uint16_t)(0xB260 + 2 * i);
+        game_poke(g, (uint16_t)(at + 1), v);
+        game_poke(g, at, (uint8_t)(v >> 4));
+    }
+}
+
 void game_power_on(Game *g)
 {
     static const uint8_t zero[GAME_RAM];
@@ -20,13 +31,7 @@ void game_power_on(Game *g)
     game_set_word(g, 0xA079, 0xFFFF);
     game_set_word(g, 0xA090, 0xDF17); /* $D8DC: JMP $DF17 at <$8F */
     r[0xA08F] = 0x7E;
-    r[0xA036] = 3;
-    for (int i = 0; i < 48; i++) { /* bank 3 $CCC1 */
-        uint8_t v = game_read_bank(g, 3, (uint16_t)(0xCECF + i));
-        uint16_t at = (uint16_t)(0xB260 + 2 * i);
-        game_poke(g, (uint16_t)(at + 1), v);
-        game_poke(g, at, (uint8_t)(v >> 4));
-    }
+    scores_today_reset(g);
     processes_init(&g->processes);
     game_reset(g);
     r[0xA052] = 0; /* $F800 */

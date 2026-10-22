@@ -1022,6 +1022,24 @@ static void test_attract(int cases)
     printf("\n");
 }
 
+/* The High Score Reset switch's process ($D43D), in the attract mode or a
+   game, over a table of random nibbles. */
+static void test_score_reset(int cases)
+{
+    long done = 0;
+    for (int n = 0; n < cases; n++) {
+        memcpy(board.ram, game_ram, sizeof game_ram);
+        load_model();
+        model.ram[0xA0BA] = rnd(2) ? (uint8_t)(0x80 | rnd(0x80)) : (uint8_t)rnd(0x80);
+        model.ram[0xA162] = (uint8_t)rnd(256);
+        for (uint16_t a = 0xB260; a < 0xB2C0; a++) game_poke(&model, a, (uint8_t)rnd(256));
+        long before = steps_compared;
+        step_case("high score reset", n, new_process(HIGH_SCORE_RESET, 0));
+        done += steps_compared - before;
+    }
+    printf("test_routines: high score reset: %ld steps equal the ROM's\n", done);
+}
+
 static void test_score(int cases)
 {
     long done = 0, extra = 0;
@@ -1099,6 +1117,7 @@ int main(int argc, char **argv)
     test_flow(2000);
     test_sequences(200);
     test_attract(30);
+    test_score_reset(200);
     if (failures) {
         fprintf(stderr, "test_routines: %d differences\n", failures);
         return 1;

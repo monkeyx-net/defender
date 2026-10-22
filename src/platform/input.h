@@ -15,6 +15,7 @@
  *   coin       Select                       5
  *   start      Start (1P), L1+Start (2P)    1 or Enter / 2
  *   menu       Select+R1                    F2
+ *   high score reset                        F6
  *   graphics   Select+L1                    F3 (F4 glow, F5 scanlines)
  *   quit       hold Select+Start 1 s        Esc
  */
@@ -35,6 +36,7 @@ typedef struct {
     bool start2;         /* 2-player start */
     bool operator_menu;  /* Select+R1 or F2, edge-triggered */
     bool menu_held;      /* the same, while held */
+    bool score_reset;    /* F6, while held: the High Score Reset switch */
     bool quit;           /* Select+Start held QUIT_HOLD_FRAMES, Esc, or window close */
     bool gfx_next;       /* Select+L1 or F3, edge-triggered: next graphics preset */
     bool gfx_glow;       /* F4, edge-triggered */

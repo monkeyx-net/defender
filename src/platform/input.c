@@ -117,6 +117,7 @@ void input_poll(InputFrame *out)
     in.operator_menu = menu_held && !menu_was_held;
     in.menu_held = menu_held;
     menu_was_held = menu_held;
+    in.score_reset = k[SDL_SCANCODE_F6];
 
     bool gfx_held[3] = { (select_held && l1_held) || k[SDL_SCANCODE_F3], k[SDL_SCANCODE_F4], k[SDL_SCANCODE_F5] };
     in.gfx_next = gfx_held[0] && !gfx_was_held[0];

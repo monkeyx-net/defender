@@ -41,19 +41,24 @@ every connected pad drives the panel.
 | 1-player start | Start | 1 or Enter |
 | 2-player start | L1 + Start | 2 |
 | Operator menu (the cabinet's Advance button) | Select + R1 | F2 |
+| Reset today's high scores (the cabinet's High Score Reset button; attract mode) | | F6 |
 | Next graphics preset | Select + L1 | F3 |
 | Glow on / off | | F4 |
 | CRT scanlines on / off | | F5 |
 | Quit | hold Select + Start for 1 s | Esc |
 
-In the operator pages (bookkeeping, adjustments, tests) the operator menu
-button steps to the next page and up / down change the value shown (the
-cabinet's High Score Reset switch, with the Auto Up toggle on / off); the
+The operator menu and High Score Reset work in the attract mode, as on the
+cabinet (whose buttons are inside the coin door). In the operator pages
+(bookkeeping, adjustments, tests) the operator menu button steps to the
+next page and up / down change the value shown (the High Score Reset
+button, with the Auto Up toggle on / off; F6 also changes it, up); the
 pages end in a restart.
 
 In Select or Start combinations, R1 and L1 do not thrust or reverse. In the
 attract mode, after 30 seconds without input, a page lists these controls
 (for 10 seconds, every 40 seconds; any input hides it).
+`--input` scripts name the keys as `coin start start2 up down thrust
+reverse fire bomb hyper menu reset`.
 
 Pads use SDL's game controller database; set `DEFENDER_GAMECONTROLLERDB` to
 a `gamecontrollerdb.txt` to add mappings.

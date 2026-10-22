@@ -4,6 +4,9 @@
  *     timer `<$7E` or its own debounce `<$7F` / `<$81` / `<$80` runs): the
  *     debounce set to $16, 10 ticks, script $D4AB, then bank 3's coin
  *     routine (cmos.h) with bank 3 selected.
+ *   $D43D: the High Score Reset switch, in the attract mode (`<$BA`
+ *     negative): today's high scores back to bank 3's (scores_today_reset,
+ *     boot.h) and `<$A162` + 1 (the hall of fame draws them again).
  *   $D839 / $D84E: the 1 / 2 player start, in the attract mode (`<$BA`
  *     negative) with a credit (two for 2 players; free play [$C495] = 1
  *     gives 2): script $D4BD / $D4C2 and $D861: `<$38` cleared; a first
@@ -36,6 +39,7 @@
 #define COIN_WAIT 0xD499
 #define START_1 0xD839
 #define START_2 0xD84E
+#define HIGH_SCORE_RESET 0xD43D
 
 /* $D861: a start (credits checked by the caller). */
 void game_start(Game *g);

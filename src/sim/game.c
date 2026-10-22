@@ -216,6 +216,7 @@ int game_step_ported(const Game *g, uint16_t proc)
     case COIN_WAIT:
     case START_1:
     case START_2:
+    case HIGH_SCORE_RESET:
     case TURN:
     case TURN_RESET:
     case TURN_WAIT:
@@ -289,7 +290,8 @@ StepResult game_step(Game *g, uint16_t proc)
     case COIN_3:
     case COIN_WAIT:
     case START_1:
-    case START_2: return flow_step(g, proc, p->resume);
+    case START_2:
+    case HIGH_SCORE_RESET: return flow_step(g, proc, p->resume);
     case TURN:
     case TURN_RESET:
     case TURN_WAIT:
