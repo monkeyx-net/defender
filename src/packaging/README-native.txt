@@ -4,8 +4,9 @@ Defender (native SDL2 build)
 Converted by monkeyx.
 
 Run ./defender, or defender.exe on Windows (add --windowed for a window on a
-desktop). The game is your ROM's own code on an emulated Williams board,
-with sound; the port adds the graphics presets, pad controls and saving.
+desktop). The game is rewritten in C from the arcade's (--emulate runs your
+ROM's own code on an emulated Williams board instead); the port adds the
+graphics presets, pad controls and saving.
 On the first start the arcade restores its factory settings (a moment's
 work, done before the window opens). Your settings and high scores (the
 arcade's CMOS) are saved as defender.cmos in $DEFENDER_SAVE_DIR, else
@@ -22,8 +23,8 @@ ROM set
   are matched by checksum. Check a set with: ./defender --check-rom defender.zip
   ./defender --extract defender.zip writes the game's pictures, font, logos
   and sounds from your set into assets/ next to the program (the PortMaster
-  launcher does this on the first run). The emulated game still reads the
-  ROM set; the game being rewritten in C will need only assets/.
+  launcher does this on the first run). The game plays its sounds from
+  there; it still reads its tables from the ROM set (later only assets/).
 
 Controls (one control panel: the players take turns, as on the cabinet)
   Up/down: left stick / D-pad; keyboard Up Down
@@ -34,7 +35,8 @@ Controls (one control panel: the players take turns, as on the cabinet)
   Hyperspace: Y; keyboard V or Shift
   Coin: Select / 5
   Start: Start / 1 or Enter;  2-player start: L1+Start / 2
-  Operator menu: Select+R1 / F2 (the cabinet's Advance button)
+  Operator menu: Select+R1 / F2 (the cabinet's Advance button); in its
+    pages it steps to the next, and up/down change the value shown
   Graphics: Select+L1 / F3 steps the presets, F4 glow, F5 CRT scanlines
   Exit: hold Select+Start for 1 second / Esc
   Every connected pad drives the panel.

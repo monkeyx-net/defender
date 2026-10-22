@@ -44,9 +44,9 @@ cmake -S . -B build && cmake --build build -j     # build
 ctest --test-dir build                            # all tests
 ctest --test-dir build -L rom                     # tests needing the ROM set (roms/defender.zip)
 ctest --test-dir build -L mame                    # tests needing MAME + the ROM set
-build/defender --windowed                         # play (finds roms/defender.zip in dev builds)
+build/defender --windowed                         # play the game in C (finds roms/defender.zip in dev builds)
+build/defender --windowed --emulate               # the ROM's own code on the emulated board
 build/defender --windowed --test-card             # the test card (ROM status, input tester)
-build/defender --windowed --c-game                # the game written in C (src/sim/), not the emulated board
 build/defender --windowed --gfx hd-glow           # enhanced graphics (presets: classic ... hd-glow-crt)
 SDL_VIDEODRIVER=dummy build/defender --frames 60 --screenshot out.png   # headless screenshot
 build/defender --check-rom roms/defender.zip      # verify a ROM set
@@ -61,12 +61,15 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
 
 ## Layout (`src/`)
 
-- `main.c` - SDL setup, fixed 60 Hz loop running one board frame per tick,
+- `main.c` - SDL setup, fixed 60 Hz loop running a frame of the C game per
+  tick (the default; `--emulate`: a board frame),
   the graphics pipeline, CMOS saving, the controls page over the attract
   mode (after 30 s idle; `<$BA` negative is the attract mode),
-  the test card (`--test-card`), the game written in C instead of the
-  board (`--c-game`: drawn from its RAM, the extracted WAVs; its tables
-  still from the ROM set), `--input`, `--frames`, `--screenshot`, `--rom`, `--check-rom`, `--dump-rom`,
+  the test card (`--test-card`), the C game drawn from its RAM with the
+  extracted WAVs (its tables still from the ROM set; Advance in its attract
+  mode hands its RAM and CMOS to the board for the operator pages, and it
+  restarts from power-on after them), the operator switches (auto-up held
+  on; up / down are high-score reset in the operator pages), `--input`, `--frames`, `--screenshot`, `--rom`, `--check-rom`, `--dump-rom`,
   `--extract`
 - `emu/` - the emulated hardware: `m6809.c` (main CPU), `pia6821.c`,
   `board.c` (Defender's main board: memory map with ROM banks and the I/O

@@ -73,6 +73,16 @@ Confirmed in this repo (each by a `mame` test):
   hyperspace 08, 2P start 10, 1P start 20, reverse 40, down 80), port B =
   IN1 (up 01); PIA $C00 port A = IN2 (as Joust: auto up 01, advance 02,
   coins 04/10/20, high score reset 08, tilt 40).
+- The operator program (bank 3; Advance in the attract mode: $D44C masks
+  interrupts, then $C021 with auto-up on, else $C027) polls IN2 itself
+  ($CA69): a press counts only with auto-up and advance both set, after 8
+  polls released (`<$47`, `<$48`; `<$49` counts presses), so with auto-up
+  off it never leaves its first page. Pages: the ROM check, bookkeeping
+  01-07, adjustments 08-28 and on (high score reset changes the value, up
+  with auto-up on, down with it off); after the last it jumps to $D73A
+  (power-on after the self-test). The port holds auto-up on (MAME's
+  toggle defaults to off) and makes up / down the high score reset while
+  the board's interrupts stay masked across frame ends.
 - Sound board: a 6808 at 894886 Hz, 128 bytes of RAM ($0000-$007F), the
   2 KB ROM at $F800-$FFFF ($B000-$F7FF read 0), the PIA at $0400 (mirrored
   at $8400). Its interrupt handler ($FCB6) resets the stack and starts each
@@ -829,7 +839,7 @@ Found by comparing instruction traces (`mame_emu`):
 | C0 | (started 2026-10-20; notes in 2.2) Reverse engineering: the object list and block layout, the main loop and its processes, random numbers, waves and their tables, scoring; notes in section 2 | Each routine named and its RAM documented |
 | C1 | C game, first wave: ship, terrain, scanner, landers and humanoids, lasers, explosions, smart bomb, hyperspace, scoring, HUD | Side-by-side test against the emulated board over a scripted first wave |
 | C2 | Remaining enemies (mutants, bombers, pods and swarmers, baiters), wave flow, planet destruction, extra lives | Side-by-side test over several waves |
-| C3 | (started 2026-10-21) Attract mode, high scores and initials (`attract.c`: done), power-on after the self-test (`boot.c`: done), extra lives and the minutes' bookkeeping (done), `--c-game` (the C game alone, drawn from its RAM, sounds from the WAVs: done; its tables still from the ROM set), operator pages, the self-test, a cocktail table's player 2 side; the C game becomes the default | Full scripted run matches; release with `assets/` only |
+| C3 | (started 2026-10-21) Attract mode, high scores and initials (`attract.c`: done), power-on after the self-test (`boot.c`: done), extra lives and the minutes' bookkeeping (done), the C game alone, drawn from its RAM, sounds from the WAVs (done; its tables still from the ROM set), the C game the default (done 2026-10-22; `--emulate` for the board), operator pages (the board runs them for the C game, handed its RAM and CMOS: to port), the self-test, a cocktail table's player 2 side | Full scripted run matches; release with `assets/` only |
 
 ## 5. Fixes carried back to the Joust port (2026-10-20)
 

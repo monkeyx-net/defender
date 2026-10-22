@@ -4,13 +4,16 @@ A C11 / SDL2 port of the 1981 Williams arcade game for Linux handhelds
 (PortMaster: ArkOS, ROCKNIX, muOS, Knulli), desktops (Linux, Windows) and the
 web, checked against the original ROM running in MAME.
 
-**Status:** playable. The game is your ROM's own code on an emulated Williams
-board (6809 main board with banked ROM, 6808 sound board), written in C and
-checked against MAME instruction for instruction; the port adds enhanced
-graphics presets, pad controls, CMOS saving and packaging for handhelds,
-desktops and the web. See [DEFENDER_PORT_PLAN.md](DEFENDER_PORT_PLAN.md).
-Next: the game rewritten in C, like the Robotron port, reading only the
-assets `--extract` writes from your ROM set once.
+**Status:** playable. The game is rewritten in C, like the Robotron port,
+checked routine by routine against the ROM running on an emulated Williams
+board (6809 main board with banked ROM, 6808 sound board; itself checked
+against MAME instruction for instruction); `--emulate` runs the ROM's own
+code on that board instead. The operator pages are not in C yet: the
+board runs them. The port adds enhanced graphics presets, pad controls,
+CMOS saving and packaging for handhelds, desktops and the web. See
+[DEFENDER_PORT_PLAN.md](DEFENDER_PORT_PLAN.md). Next: the C game reading
+only the assets `--extract` writes from your ROM set once (its tables still
+come from the ROM set).
 
 You need your own MAME `defender` ROM set (`defender.zip`, red label); none is included.
 
@@ -43,6 +46,11 @@ every connected pad drives the panel.
 | CRT scanlines on / off | | F5 |
 | Quit | hold Select + Start for 1 s | Esc |
 
+In the operator pages (bookkeeping, adjustments, tests) the operator menu
+button steps to the next page and up / down change the value shown (the
+cabinet's High Score Reset switch, with the Auto Up toggle on / off); the
+pages end in a restart.
+
 In Select or Start combinations, R1 and L1 do not thrust or reverse. In the
 attract mode, after 30 seconds without input, a page lists these controls
 (for 10 seconds, every 40 seconds; any input hides it).
@@ -53,7 +61,7 @@ a `gamecontrollerdb.txt` to add mappings.
 ## Running
 
 ```bash
-build/defender [--windowed] [--gfx preset] [--rom path] [--test-card]
+build/defender [--windowed] [--gfx preset] [--rom path] [--test-card] [--emulate]
                [--input script.txt] [--frames N] [--screenshot out.png]
 build/defender --check-rom roms/defender.zip            # verify a ROM set
 build/defender --dump-rom roms/defender.zip C000 FFFF   # ROM bytes: "B:ADDR BYTE" per bank, then "ADDR BYTE"
@@ -64,6 +72,7 @@ build/defender --extract roms/defender.zip [dir]  # pictures, font, logos, sound
   `hd-smooth`, `hd-glow`, `hd-glow-crt` (in the game the `hd-` presets
   upscale the whole picture, like `crisp` / `smooth`).
 - `--test-card`: ROM status, an input tester and the presets.
+- `--emulate`: the ROM's own code on the emulated board, not the game in C.
 - `--input`, `--frames`, `--screenshot`: scripted, headless runs
   (`SDL_VIDEODRIVER=dummy`); see the comment at the top of `src/main.c`.
 
