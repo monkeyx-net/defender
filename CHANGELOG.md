@@ -3,6 +3,18 @@
 ---
 ## Changelog
 
+### v0.2.1 (2026-10-23)
+
+#### Port
+
+- **Lower CPU use** — the main loop sleeps until the next frame is due
+  instead of redrawing and presenting again (no spinning where vsync does
+  not block, no extra frames on 120/144 Hz displays); the graphics
+  presets' scalers (Scale2x/3x, xBR) read their neighbours without bounds
+  checks inside the picture, write flat areas at once and skip the
+  premultiply pass for the opaque game frame. Pictures unchanged, bit for
+  bit.
+
 ### v0.2.0 (2026-10-22)
 
 #### Game
