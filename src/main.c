@@ -658,6 +658,7 @@ static bool run_once(void)
     /* Headless runs step once per loop so the frame count is exact. */
     if (max_frames >= 0 && acc < step_ticks) acc = step_ticks;
 
+    long stepped = frames;
     while (acc >= step_ticks) {
         InputFrame in;
         input_poll(&in);
@@ -669,6 +670,13 @@ static bool run_once(void)
         frames++;
         acc -= step_ticks;
         if (max_frames >= 0 && frames >= max_frames) break;
+    }
+    if (frames == stepped) {
+#ifndef __EMSCRIPTEN__
+        Uint64 ms = (step_ticks - acc) * 1000 / SDL_GetPerformanceFrequency();
+        SDL_Delay(ms > 1 ? (Uint32)ms : 1);
+#endif
+        return true; /* the last picture stays */
     }
     if (max_frames < 0 || frames >= max_frames) draw(video_display_scale());
     if (max_frames < 0) video_present(shown, g.gfx.scanlines); /* blocks on vsync */

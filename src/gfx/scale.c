@@ -1,6 +1,7 @@
 #include "gfx/scale.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct {
     const uint32_t *px;
@@ -45,8 +46,13 @@ static void scale2x(const Src *s, uint32_t *dst, int dstride)
 {
     for (int y = 0; y < s->h; y++)
         for (int x = 0; x < s->w; x++) {
-            uint32_t B = at(s, x, y - 1), D = at(s, x - 1, y), E = at(s, x, y), F = at(s, x + 1, y),
-                     H = at(s, x, y + 1);
+            uint32_t B, D, E, F, H;
+            if (x > 0 && y > 0 && x < s->w - 1 && y < s->h - 1) { /* inside: no edge to clamp */
+                const uint32_t *p = s->px + (long)y * s->stride + x;
+                B = p[-s->stride], D = p[-1], E = p[0], F = p[1], H = p[s->stride];
+            } else {
+                B = at(s, x, y - 1), D = at(s, x - 1, y), E = at(s, x, y), F = at(s, x + 1, y), H = at(s, x, y + 1);
+            }
             uint32_t *o = dst + (long)(y * 2) * dstride + x * 2;
             if (B != H && D != F) {
                 o[0] = D == B ? D : E;
@@ -176,15 +182,24 @@ static void xbr(const Src *s, uint32_t *dst, int dstride, int f)
 {
     for (int y = 0; y < s->h; y++)
         for (int x = 0; x < s->w; x++) {
-            uint32_t E[9];
-            const uint32_t pe = at(s, x, y);
-            for (int i = 0; i < f * f; i++) E[i] = pe;
+            uint32_t E[9], pe, up, down, lt, rt;
+            if (x > 0 && y > 0 && x < s->w - 1 && y < s->h - 1) { /* inside: no edge to clamp */
+                const uint32_t *p = s->px + (long)y * s->stride + x;
+                pe = p[0], up = p[-s->stride], down = p[s->stride], lt = p[-1], rt = p[1];
+            } else {
+                pe = at(s, x, y), up = at(s, x, y - 1), down = at(s, x, y + 1), lt = at(s, x - 1, y), rt = at(s, x + 1, y);
+            }
             /* every corner needs PE to differ from both its edge neighbours:
                flat areas (most of the screen) skip the neighbourhood */
-            uint32_t up = at(s, x, y - 1), down = at(s, x, y + 1), lt = at(s, x - 1, y), rt = at(s, x + 1, y);
             int open = (pe != down && pe != rt) || (pe != rt && pe != up) || (pe != up && pe != lt) ||
                        (pe != lt && pe != down);
-            for (int rot = 0; open && rot < 4; rot++) {
+            if (!open) {
+                for (int r = 0; r < f; r++)
+                    for (int c = 0; c < f; c++) dst[(long)(y * f + r) * dstride + x * f + c] = pe;
+                continue;
+            }
+            for (int i = 0; i < f * f; i++) E[i] = pe;
+            for (int rot = 0; rot < 4; rot++) {
                 Hood h = hood(s, x, y, rot);
                 uint32_t px = 0;
                 int left = 0, up = 0, kind = edge(&h, f, &px, &left, &up);
@@ -266,9 +281,17 @@ int scale_pixels(const uint32_t *src, int w, int h, int sstride, uint32_t *dst, 
 {
     if (w <= 0 || h <= 0) return 0;
     if (reserve((size_t)w * (size_t)h)) return -1;
-    /* work on premultiplied pixels so blends fade sprite edges to transparent */
+    /* work on premultiplied pixels so blends fade sprite edges to transparent
+       (an opaque picture clamped at its edges, the game's frame, is its own:
+       blends keep it opaque) */
+    uint32_t alpha = 0xFF000000u;
     for (int y = 0; y < h; y++)
-        for (int x = 0; x < w; x++) in[(long)y * w + x] = premul(src[(long)y * sstride + x]);
+        for (int x = 0; x < w; x++) {
+            uint32_t c = src[(long)y * sstride + x];
+            alpha &= c;
+            in[(long)y * w + x] = premul(c);
+        }
+    int opaque = clamp && alpha == 0xFF000000u;
 
     Src s = { in, w, h, w, clamp };
     int ow = w * factor, oh = h * factor;
@@ -283,6 +306,8 @@ int scale_pixels(const uint32_t *src, int w, int h, int sstride, uint32_t *dst, 
         res = big;
     }
     for (int y = 0; y < oh; y++)
-        for (int x = 0; x < ow; x++) dst[(long)y * dstride + x] = unpremul(res[(long)y * ow + x]);
+        if (opaque) memcpy(dst + (long)y * dstride, res + (long)y * ow, sizeof *dst * (size_t)ow);
+        else
+            for (int x = 0; x < ow; x++) dst[(long)y * dstride + x] = unpremul(res[(long)y * ow + x]);
     return 0;
 }
