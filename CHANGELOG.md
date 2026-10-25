@@ -3,6 +3,19 @@
 ---
 ## Changelog
 
+### v0.2.2 (2026-10-25)
+
+#### Port
+
+- **Screen scaling for any screen shape** — scale modes `auto` (default:
+  integer when it fills 95% of the screen, else fit), `integer`, `fit` and
+  `stretch` (Select+R2 / F7, `--scale`), at 4:3 as the arcade monitor
+  showed it (the default) or square pixels (Select+L2 / F8, `--aspect`);
+  saved in `defender.cfg` with the graphics preset (which is now saved too). Sizes between whole numbers are drawn sharp bilinear (scaled up
+  by whole numbers, then down linearly), so 720x720 handhelds get 720x540
+  instead of 584x480 and 1080p fills the height; scanlines work at every
+  size.
+
 ### v0.2.1 (2026-10-23)
 
 #### Port

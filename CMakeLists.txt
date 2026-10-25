@@ -1,7 +1,7 @@
 # Native SDL2 Defender for Linux handhelds and desktops (aarch64, x86_64),
 # Windows (MinGW) and the web (Emscripten). See DEFENDER_PORT_PLAN.md.
 cmake_minimum_required(VERSION 3.13)
-project(defender VERSION 0.2.1 LANGUAGES C)
+project(defender VERSION 0.2.2 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
