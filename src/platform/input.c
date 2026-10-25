@@ -3,11 +3,12 @@
 #include <SDL.h>
 
 #define STICK_DEAD_ZONE 12000
+#define TRIGGER_PRESSED 16000
 
 static SDL_GameController *pads[MAX_PADS];
 static int quit_hold;
 static bool menu_was_held;
-static bool gfx_was_held[3];
+static bool gfx_was_held[5];
 static bool quit_requested;
 
 static void open_pad(int index)
@@ -78,7 +79,7 @@ void input_poll(InputFrame *out)
     in.coin = k[SDL_SCANCODE_5];
     in.start = k[SDL_SCANCODE_1] || k[SDL_SCANCODE_RETURN] || k[SDL_SCANCODE_KP_ENTER];
     in.start2 = k[SDL_SCANCODE_2];
-    bool select_held = false, start_held = false, r1_held = false, l1_held = false, b_held = false;
+    bool select_held = false, start_held = false, r1_held = false, l1_held = false, r2_held = false, l2_held = false, b_held = false;
 
     for (int i = 0; i < MAX_PADS; i++) {
         SDL_GameController *c = pads[i];
@@ -92,6 +93,8 @@ void input_poll(InputFrame *out)
         start_held |= SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_START);
         r1_held |= SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
         l1_held |= SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
+        r2_held |= SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > TRIGGER_PRESSED;
+        l2_held |= SDL_GameControllerGetAxis(c, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > TRIGGER_PRESSED;
         b_held |= SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_B);
         in.fire |= SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_A);
         in.smart_bomb |= SDL_GameControllerGetButton(c, SDL_CONTROLLER_BUTTON_X);
@@ -108,7 +111,7 @@ void input_poll(InputFrame *out)
         quit_hold++;
     } else {
         quit_hold = 0;
-        in.coin |= select_held && !r1_held && !l1_held;
+        in.coin |= select_held && !r1_held && !l1_held && !r2_held && !l2_held;
         if (start_held && l1_held) in.start2 = true;
         else in.start |= start_held;
     }
@@ -119,11 +122,14 @@ void input_poll(InputFrame *out)
     menu_was_held = menu_held;
     in.score_reset = k[SDL_SCANCODE_F6];
 
-    bool gfx_held[3] = { (select_held && l1_held) || k[SDL_SCANCODE_F3], k[SDL_SCANCODE_F4], k[SDL_SCANCODE_F5] };
+    bool gfx_held[5] = { (select_held && l1_held) || k[SDL_SCANCODE_F3], k[SDL_SCANCODE_F4], k[SDL_SCANCODE_F5],
+                         (select_held && r2_held) || k[SDL_SCANCODE_F7], (select_held && l2_held) || k[SDL_SCANCODE_F8] };
     in.gfx_next = gfx_held[0] && !gfx_was_held[0];
     in.gfx_glow = gfx_held[1] && !gfx_was_held[1];
     in.gfx_scanlines = gfx_held[2] && !gfx_was_held[2];
-    for (int i = 0; i < 3; i++) gfx_was_held[i] = gfx_held[i];
+    in.screen_scale = gfx_held[3] && !gfx_was_held[3];
+    in.screen_aspect = gfx_held[4] && !gfx_was_held[4];
+    for (int i = 0; i < 5; i++) gfx_was_held[i] = gfx_held[i];
 
     in.quit = quit_requested || quit_hold >= QUIT_HOLD_FRAMES || k[SDL_SCANCODE_ESCAPE];
     *out = in;

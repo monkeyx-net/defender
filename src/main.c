@@ -7,12 +7,17 @@
  * the arcade's CMOS. --test-card shows the test card instead (ROM status, an
  * input tester and the graphics presets).
  *
- *   defender [--windowed] [--gfx preset] [--rom path] [--test-card] [--emulate]
- *            [--input script.txt] [--frames N] [--screenshot out.png]
+ *   defender [--windowed] [--gfx preset] [--scale mode] [--aspect 4:3|square]
+ *            [--rom path] [--test-card] [--emulate] [--input script.txt]
+ *            [--frames N] [--screenshot out.png]
  *   defender --check-rom <dir|zip>
  *   defender --dump-rom <dir|zip> <first> <last>
  *   defender --extract <dir|zip> [<asset dir>]
  *
+ * --scale is auto, integer, fit or stretch (platform/video.h). The graphics
+ * preset, scale and aspect are saved when changed in play (F3-F5, F7, F8) and
+ * come back next time; the command line overrides them, headless runs ignore
+ * them.
  * --frames N stops after N updates; with --screenshot the last frame is
  * written as a PNG (use SDL_VIDEODRIVER=dummy to run headless).
  * --input replays scripted controls: lines of "<frame> [coin] [start] [start2]
@@ -59,6 +64,8 @@
 #define MAX_STEPS_PER_PRESENT 4
 #define GFX_NOTICE_FRAMES 120
 #define CMOS_FILE "defender.cmos"
+#define SETTINGS_FILE "defender.cfg" /* graphics preset, scale and aspect */
+#define SETTINGS_VERSION 1
 #define CMOS_SAVE_FRAMES 300  /* write changed CMOS (scores, settings) at most every 5 s */
 #define PRIME_FRAMES 1800     /* blank CMOS: let the game restore its factory settings */
 #define BOOT_SKIP_FRAMES 720  /* web: run the power-on tests headless, so the page opens on the attract mode */
@@ -85,6 +92,7 @@ typedef struct {
     InputFrame in;
     GfxSettings gfx;
     int gfx_notice;
+    int notice_screen;   /* the notice is the screen mode's, not the preset's */
     int coins;
     char rom_path[1024];
     char rom_error[256];
@@ -169,7 +177,9 @@ static void draw_scene(Framebuffer *t)
     }
 
     snprintf(line, sizeof line, "GRAPHICS: %s   (SELECT+L1 / F3, F4 GLOW, F5 SCANLINES)", gfx_describe(&g.gfx));
-    centred(t, 184, line, g.gfx_notice > 0 ? YELLOW : WHITE);
+    centred(t, 184, line, g.gfx_notice > 0 && !g.notice_screen ? YELLOW : WHITE);
+    snprintf(line, sizeof line, "SCREEN: %s   (SELECT+R2/L2, F7/F8)", video_describe());
+    centred(t, 202, line, g.gfx_notice > 0 && g.notice_screen ? YELLOW : WHITE);
     snprintf(line, sizeof line, "FRAME %lu   RENDER %dX", g.clock, t->scale);
     centred(t, 194, line, GREY);
     centred(t, 210, "EXIT: HOLD SELECT+START OR ESC", GREY);
@@ -203,6 +213,29 @@ static void save_cmos(void)
     if (save_store(CMOS_FILE, g.board.cmos, sizeof g.board.cmos))
         fprintf(stderr, "defender: cannot save %s\n", save_path(CMOS_FILE));
     g.board.cmos_dirty = 0;
+}
+
+/* The graphics preset, scale and aspect, as bytes: SETTINGS_VERSION, then the
+   GfxSettings fields, the scale and the aspect. Headless runs neither read nor
+   write it. */
+static int settings_headless;
+
+static void save_settings(void)
+{
+    if (settings_headless) return;
+    int scale, aspect;
+    video_get_mode(&scale, &aspect);
+    const uint8_t b[7] = { SETTINGS_VERSION, (uint8_t)g.gfx.mode, (uint8_t)g.gfx.smooth, (uint8_t)g.gfx.glow,
+                           (uint8_t)g.gfx.scanlines, (uint8_t)scale, (uint8_t)aspect };
+    if (save_store(SETTINGS_FILE, b, sizeof b)) fprintf(stderr, "defender: cannot save %s\n", save_path(SETTINGS_FILE));
+}
+
+static void load_settings(void)
+{
+    uint8_t b[7];
+    if (settings_headless || save_load(SETTINGS_FILE, b, sizeof b) || b[0] != SETTINGS_VERSION) return;
+    if (b[1] <= GFX_HD) g.gfx = (GfxSettings){ b[1], b[2] != 0, b[3] != 0, b[4] != 0 };
+    video_set_mode(b[5], b[6]); /* out of range: kept as they are */
 }
 
 /* The board runs bank 3's operator program (bookkeeping, adjustments,
@@ -415,6 +448,7 @@ static const struct { const char *what, *pad, *keys; } CONTROLS[] = {
     { "OPERATOR MENU", "SELECT+R1", "F2" },
     { "SCORE RESET", "", "F6" },
     { "GRAPHICS", "SELECT+L1", "F3 (F4 GLOW, F5 CRT)" },
+    { "SCREEN SIZE / ASPECT", "SELECT+R2 / L2", "F7 / F8" },
     { "EXIT", "HOLD SELECT+START", "ESC" },
 };
 
@@ -455,7 +489,8 @@ static void draw(int display_scale)
         if (controls_page_up()) draw_controls(&fb);
         if (g.gfx_notice > 0) {
             char text[80];
-            snprintf(text, sizeof text, "GRAPHICS: %s", gfx_describe(&g.gfx));
+            if (g.notice_screen) snprintf(text, sizeof text, "SCREEN: %s", video_describe());
+            else snprintf(text, sizeof text, "GRAPHICS: %s", gfx_describe(&g.gfx));
             fill_rectf(&fb, 0, FB_HEIGHT - 9, FB_WIDTH, 9, 0x000000);
             centred(&fb, FB_HEIGHT - 7, text, YELLOW);
         }
@@ -501,6 +536,18 @@ static void step(const InputFrame *in)
         if (in->gfx_glow) g.gfx.glow = !g.gfx.glow;
         if (in->gfx_scanlines) g.gfx.scanlines = !g.gfx.scanlines;
         g.gfx_notice = GFX_NOTICE_FRAMES;
+        g.notice_screen = 0;
+        save_settings();
+    }
+    if (in->screen_scale || in->screen_aspect) {
+        int scale, aspect;
+        video_get_mode(&scale, &aspect);
+        if (in->screen_scale) scale = (scale + 1) % VIDEO_SCALES;
+        if (in->screen_aspect) aspect = (aspect + 1) % VIDEO_ASPECTS;
+        video_set_mode(scale, aspect);
+        g.gfx_notice = GFX_NOTICE_FRAMES;
+        g.notice_screen = 1;
+        save_settings();
     }
     if (g.gfx_notice > 0) g.gfx_notice--;
 }
@@ -694,7 +741,8 @@ static void web_frame(void) { run_once(); }
 int main(int argc, char **argv)
 {
     bool windowed = false;
-    const char *rom_arg = NULL;
+    const char *rom_arg = NULL, *gfx_arg = NULL;
+    int scale_arg = -1, aspect_arg = -1;
     g.c_game = 1;
     if (argc == 3 && !strcmp(argv[1], "--check-rom")) return check_rom(argv[2]);
     if (argc == 5 && !strcmp(argv[1], "--dump-rom")) return dump_rom(argv[2], argv[3], argv[4]);
@@ -710,13 +758,26 @@ int main(int argc, char **argv)
             if (load_script(argv[++i])) return 2;
         }
         else if (!strcmp(argv[i], "--gfx") && i + 1 < argc) {
-            if (gfx_parse(argv[++i], &g.gfx)) {
+            GfxSettings check;
+            if (gfx_parse(argv[++i], &check)) {
                 fprintf(stderr, "defender: unknown --gfx preset '%s' (one of: %s)\n", argv[i], gfx_preset_names());
+                return 2;
+            }
+            gfx_arg = argv[i];
+        } else if (!strcmp(argv[i], "--scale") && i + 1 < argc) {
+            if ((scale_arg = video_parse_scale(argv[++i])) < 0) {
+                fprintf(stderr, "defender: unknown --scale '%s' (one of: auto integer fit stretch)\n", argv[i]);
+                return 2;
+            }
+        } else if (!strcmp(argv[i], "--aspect") && i + 1 < argc) {
+            if ((aspect_arg = video_parse_aspect(argv[++i])) < 0) {
+                fprintf(stderr, "defender: unknown --aspect '%s' (4:3 or square)\n", argv[i]);
                 return 2;
             }
         } else {
             fprintf(stderr,
-                    "usage: %s [--windowed] [--gfx preset] [--rom path] [--test-card] [--emulate]\n"
+                    "usage: %s [--windowed] [--gfx preset] [--scale auto|integer|fit|stretch] [--aspect 4:3|square]\n"
+                    "          [--rom path] [--test-card] [--emulate]\n"
                     "          [--input script.txt] [--frames N] [--screenshot out.png]\n"
                     "       %s --check-rom <dir|zip>\n"
                     "       %s --dump-rom <dir|zip> <first> <last>\n"
@@ -725,6 +786,11 @@ int main(int argc, char **argv)
             return 2;
         }
     }
+
+    settings_headless = max_frames >= 0;
+    load_settings();
+    if (gfx_arg) gfx_parse(gfx_arg, &g.gfx);
+    video_set_mode(scale_arg, aspect_arg); /* -1: as saved, or the default */
 
     if (fb_init(&fb, 1)) {
         fprintf(stderr, "defender: out of memory\n");

@@ -45,6 +45,8 @@ every connected pad drives the panel.
 | Next graphics preset | Select + L1 | F3 |
 | Glow on / off | | F4 |
 | CRT scanlines on / off | | F5 |
+| Screen scale: auto, integer, fit, stretch | Select + R2 | F7 |
+| Screen aspect: 4:3 (the arcade monitor) or square pixels | Select + L2 | F8 |
 | Quit | hold Select + Start for 1 s | Esc |
 
 The operator menu and High Score Reset work in the attract mode, as on the
@@ -66,8 +68,8 @@ a `gamecontrollerdb.txt` to add mappings.
 ## Running
 
 ```bash
-build/defender [--windowed] [--gfx preset] [--rom path] [--test-card] [--emulate]
-               [--input script.txt] [--frames N] [--screenshot out.png]
+build/defender [--windowed] [--gfx preset] [--scale mode] [--aspect 4:3|square]
+               [--rom path] [--test-card] [--emulate] [--input script.txt] [--frames N] [--screenshot out.png]
 build/defender --check-rom roms/defender.zip            # verify a ROM set
 build/defender --dump-rom roms/defender.zip C000 FFFF   # ROM bytes: "B:ADDR BYTE" per bank, then "ADDR BYTE"
 build/defender --extract roms/defender.zip [dir]  # pictures, font, logos, sounds into assets/
@@ -76,6 +78,11 @@ build/defender --extract roms/defender.zip [dir]  # pictures, font, logos, sound
 - `--gfx`: `classic` (default), `classic-crt`, `crisp`, `smooth`, `hd-crisp`,
   `hd-smooth`, `hd-glow`, `hd-glow-crt` (in the game the `hd-` presets
   upscale the whole picture, like `crisp` / `smooth`).
+- `--scale`: `auto` (default: `integer` if it fills 95% of the screen, else
+  `fit`), `integer`, `fit` (sizes between whole numbers stay sharp),
+  `stretch`. `--aspect`: `4:3` (default, the arcade monitor's shape) or
+  `square` pixels. The preset, scale and aspect are saved when changed in
+  play and come back next time; the command line overrides them.
 - `--test-card`: ROM status, an input tester and the presets.
 - `--emulate`: the ROM's own code on the emulated board, not the game in C.
 - `--input`, `--frames`, `--screenshot`: scripted, headless runs

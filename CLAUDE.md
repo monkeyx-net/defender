@@ -48,6 +48,7 @@ build/defender --windowed                         # play the game in C (finds ro
 build/defender --windowed --emulate               # the ROM's own code on the emulated board
 build/defender --windowed --test-card             # the test card (ROM status, input tester)
 build/defender --windowed --gfx hd-glow           # enhanced graphics (presets: classic ... hd-glow-crt)
+build/defender --scale fit --aspect 4:3           # screen: auto|integer|fit|stretch, 4:3|square (saved in defender.cfg)
 SDL_VIDEODRIVER=dummy build/defender --frames 60 --screenshot out.png   # headless screenshot
 build/defender --check-rom roms/defender.zip      # verify a ROM set
 build/defender --dump-rom roms/defender.zip C000 FFFF   # ROM bytes: "B:ADDR BYTE" per bank, then "ADDR BYTE"
@@ -77,7 +78,8 @@ Release builds: `-DDEFENDER_DEV_ASSETS=OFF` (no source-tree fallbacks).
   page, interrupts, CMOS, video counter, video per line), `m6800.c` +
   `sound.c` (the sound board and its DAC)
 - `platform/` - the only code that includes SDL: `video.c` (292x240 framebuffer
-  at any scale, integer scaling, scanline overlay), `input.c` (Defender's
+  at any scale; scale modes auto/integer/fit/stretch at 4:3 or square pixels,
+  non-integer sizes sharp bilinear through a render target; scanline overlay), `input.c` (Defender's
   control panel; pads and keyboard), `audio.c` (streams the board's sound)
 - `sim/` - the game in C, piece by piece (plan decision 6): `rng.c` (the
   random generator, $D711), `ship.c` (the ship's motion and scrolling,

@@ -40,11 +40,21 @@ Controls (one control panel: the players take turns, as on the cabinet)
   Reset today's high scores: F6 (the cabinet's High Score Reset button,
     in the attract mode)
   Graphics: Select+L1 / F3 steps the presets, F4 glow, F5 CRT scanlines
+  Screen: Select+R2 / F7 steps the scale mode, Select+L2 / F8 the aspect
   Exit: hold Select+Start for 1 second / Esc
   Every connected pad drives the panel.
 
 Graphics presets (--gfx <preset>)
   classic, classic-crt, crisp, smooth, hd-crisp, hd-smooth, hd-glow, hd-glow-crt
   (in the game the hd- presets upscale the whole picture, like crisp/smooth)
+
+Screen (--scale <mode>, --aspect 4:3|square)
+  auto     whole-number scaling if it fills at least 95% of the screen, else fit
+  integer  a whole number of screen rows per arcade row
+  fit      as large as fits (sizes between whole numbers stay sharp)
+  stretch  the whole screen, whatever its shape
+  4:3 is the shape of the arcade's monitor (the default); square keeps square
+  pixels. The preset, scale and aspect are saved (defender.cfg) and come back
+  next time; the command line overrides them.
 
 See NOTICE for the third-party material this project refers to.

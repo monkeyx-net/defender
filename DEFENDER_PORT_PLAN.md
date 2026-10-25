@@ -42,7 +42,12 @@ The repository started as a copy of the sibling Joust port (`../joust`,
    hyperspace, 5 coin, 1/2 start, F2 Advance.
 5. **Enhanced graphics** as in the Joust port (FILTER and HD presets, glow,
    scanlines), cosmetic only, classic by default. The game's frame is only
-   pixels, so the HD presets upscale it like FILTER.
+   pixels, so the HD presets upscale it like FILTER. The screen
+   (2026-10-25, from the Joust port): scale auto/integer/fit/stretch
+   (Select+R2 / F7) at 4:3, the cabinet's monitor, or square pixels
+   (Select+L2 / F8); auto is integer when that fills 95% of fit, else fit
+   (720x720, 1080p); fractional sizes are scaled up by whole numbers, then
+   down linearly. Preset, scale and aspect saved in defender.cfg.
 6. **The game in C** (changed 2026-10-20). The game logic is rewritten in C
    (`src/sim/`, `src/game/`), as Robotron's was, from the ROM's behaviour
    (traces, probes, the disassembly MAME writes to `build/re`). The

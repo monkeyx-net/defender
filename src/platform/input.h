@@ -17,6 +17,7 @@
  *   menu       Select+R1                    F2
  *   high score reset                        F6
  *   graphics   Select+L1                    F3 (F4 glow, F5 scanlines)
+ *   screen     Select+R2 (scale), +L2 (aspect)  F7 (scale), F8 (aspect)
  *   quit       hold Select+Start 1 s        Esc
  */
 #ifndef DEFENDER_INPUT_H
@@ -41,6 +42,8 @@ typedef struct {
     bool gfx_next;       /* Select+L1 or F3, edge-triggered: next graphics preset */
     bool gfx_glow;       /* F4, edge-triggered */
     bool gfx_scanlines;  /* F5, edge-triggered */
+    bool screen_scale;   /* Select+R2 or F7, edge-triggered: next scale mode */
+    bool screen_aspect;  /* Select+L2 or F8, edge-triggered: 4:3 or square pixels */
     int pads;            /* game controllers connected */
 } InputFrame;
 
